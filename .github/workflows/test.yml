@@ -1,0 +1,32 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m py_compile shorts.py eshorts/*.py
+  compose-and-lint:
+    # the compiler's output must pass the HyperFrames lint every time
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: python shorts.py --root ci-shorts new sky --topic "why the sky is blue"
+      - run: python shorts.py --root ci-shorts script sky --script examples/why-is-the-sky-blue.SCRIPT.json
+      - run: python shorts.py --root ci-shorts compose sky --theme midnight
+      - run: cd ci-shorts/sky/project && npx --yes hyperframes lint

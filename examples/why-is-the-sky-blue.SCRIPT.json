@@ -1,0 +1,96 @@
+{
+  "schema": "rapp-education-short/1.0",
+  "title": "Why is the sky blue?",
+  "topic": "Why the sky is blue (Rayleigh scattering)",
+  "scenes": [
+    {
+      "kind": "hook",
+      "heading": "Why is the sky blue?",
+      "lines": [
+        "It is not because it reflects the sea"
+      ],
+      "emphasis": [
+        "blue"
+      ]
+    },
+    {
+      "kind": "point",
+      "heading": "Sunlight is every colour",
+      "lines": [
+        "White light is a mix of all colours",
+        "Each colour has its own wavelength"
+      ],
+      "emphasis": [
+        "every"
+      ]
+    },
+    {
+      "kind": "steps",
+      "heading": "What happens",
+      "visual": {
+        "type": "steps",
+        "items": [
+          "Light hits air molecules",
+          "Short wavelengths scatter more",
+          "Blue bounces everywhere"
+        ]
+      }
+    },
+    {
+      "kind": "number",
+      "heading": "How much more?",
+      "visual": {
+        "type": "number",
+        "value": "5.5x",
+        "caption": "blue scatters more than red"
+      }
+    },
+    {
+      "kind": "compare",
+      "heading": "Noon vs sunset",
+      "lines": [
+        "Same light, longer path"
+      ],
+      "visual": {
+        "type": "compare",
+        "left": "Noon: short path, blue wins",
+        "right": "Sunset: long path, red wins"
+      }
+    },
+    {
+      "kind": "quote",
+      "heading": "Rayleigh scattering",
+      "lines": [
+        "Named after Lord Rayleigh",
+        "\u2014 1871"
+      ]
+    },
+    {
+      "kind": "recap",
+      "heading": "So",
+      "lines": [
+        "Sunlight is all colours",
+        "Air scatters blue most",
+        "Long paths turn it red"
+      ]
+    },
+    {
+      "kind": "cta",
+      "heading": "Next question?",
+      "lines": [
+        "Why is the sea blue?"
+      ],
+      "visual": {
+        "type": "pill",
+        "text": "Follow for more"
+      }
+    }
+  ],
+  "audience": "curious teens and adults",
+  "hashtags": [
+    "#science",
+    "#physics",
+    "#shorts"
+  ],
+  "chip": "Everyday physics"
+}

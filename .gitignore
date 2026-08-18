@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+shorts/
+node_modules/
+copilot-logs/
+.DS_Store
