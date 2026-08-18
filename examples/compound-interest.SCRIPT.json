@@ -1,0 +1,98 @@
+{
+  "schema": "rapp-education-short/1.0",
+  "title": "Why Starting Early Beats Investing More",
+  "topic": "How compound interest actually works, and why starting early matters more than investing more",
+  "audience": "people in their 20s",
+  "hashtags": [
+    "#compoundinterest",
+    "#personalfinance",
+    "#investing"
+  ],
+  "scenes": [
+    {
+      "kind": "hook",
+      "heading": "Time beats money",
+      "lines": [
+        "The math is stranger than you think."
+      ],
+      "emphasis": [
+        "Time",
+        "beats"
+      ]
+    },
+    {
+      "kind": "point",
+      "heading": "Compounding, plainly",
+      "lines": [
+        "Your money earns money.",
+        "Then that new money earns money too."
+      ],
+      "emphasis": [
+        "earns",
+        "money"
+      ]
+    },
+    {
+      "kind": "steps",
+      "heading": "One dollar, three years",
+      "lines": [],
+      "visual": {
+        "type": "steps",
+        "items": [
+          "Year 1: earns interest",
+          "Year 2: interest earns interest",
+          "Year 3: the curve bends up"
+        ]
+      },
+      "emphasis": [
+        "interest",
+        "curve"
+      ]
+    },
+    {
+      "kind": "number",
+      "heading": "Ten years of waiting",
+      "lines": [],
+      "visual": {
+        "type": "number",
+        "value": "2x",
+        "caption": "Starting at 25 can double the ending balance versus 35."
+      },
+      "emphasis": [
+        "double"
+      ]
+    },
+    {
+      "kind": "compare",
+      "heading": "Early vs. more",
+      "lines": [
+        "Small and early often wins."
+      ],
+      "visual": {
+        "type": "compare",
+        "left": "$100 monthly at 25",
+        "right": "$200 monthly at 40"
+      },
+      "emphasis": [
+        "early",
+        "wins"
+      ]
+    },
+    {
+      "kind": "cta",
+      "heading": "Start now, stay boring",
+      "lines": [
+        "The best day was yesterday. Today works too."
+      ],
+      "visual": {
+        "type": "pill",
+        "text": "Follow for more"
+      },
+      "emphasis": [
+        "Start",
+        "Today"
+      ]
+    }
+  ],
+  "chip": "Money basics"
+}

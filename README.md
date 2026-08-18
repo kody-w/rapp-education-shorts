@@ -51,7 +51,10 @@ capped at 59 s — because a model that authors its own timing lies about it.
 | `recap` | 2–4 bullets stacking up |
 | `cta` | closing line + a pill (`visual.text`, e.g. *Follow for more*) |
 
-See [`examples/why-is-the-sky-blue.SCRIPT.json`](examples/why-is-the-sky-blue.SCRIPT.json).
+See [`examples/why-is-the-sky-blue.SCRIPT.json`](examples/why-is-the-sky-blue.SCRIPT.json) (hand-written) and
+[`examples/compound-interest.SCRIPT.json`](examples/compound-interest.SCRIPT.json) (model-written from one topic line).
+
+![frames](examples/compound-interest.frames.png)
 The lint also refuses URLs/handles in text and a small blocked-word list; a refused
 model draft is retried once or twice with the exact findings quoted back.
 

@@ -269,7 +269,7 @@ def compose(script, slug, theme=None, fps=30, audio=None, chip=None):
            '<div id="ptrack"><div id="pbar"></div></div></div>\n%s</div>\n'
            '<script>%s</script>\n</body>\n</html>\n') % (
         W, H, _e(script.get("title", slug)), __version__, GSAP_CDN, css, COMP_ID, W, H, total, fps,
-        total, "\n".join(parts), total, _e(chip or script.get("chip") or script.get("topic", "")[:28]), len(scenes),
+        total, "\n".join(parts), total, _e(chip or script.get("chip") or " ".join(str(script.get("title", "")).split()[:3])), len(scenes),
         audio_tag, js)
     return {
         "index.html": doc,

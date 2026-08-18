@@ -34,6 +34,7 @@ MIN_SCENES = 4
 MAX_SCENES = 12
 MAX_LINES = 3
 MAX_LINE_WORDS = 12
+MAX_TOTAL_WORDS = 110     # ≈ 45–55 s at READ_WPS with per-scene holds — the budget the model is told
 MAX_HEADING_CHARS = 42
 BLOCKED = ("http", "www.", ".com", "@", "kill", "suicide", "porn", "fuck", "shit")
 
@@ -57,6 +58,19 @@ def scene_seconds(scene):
     if scene.get("kind") == "hook":
         sec = max(sec, 3.0)
     return round(max(MIN_SCENE_S, min(MAX_SCENE_S, sec)), 2)
+
+
+def total_words(script):
+    n = 0
+    for s in script.get("scenes", []) or []:
+        if not isinstance(s, dict):
+            continue
+        n += word_count(s.get("heading", "")) + sum(word_count(l) for l in (s.get("lines") or []) if isinstance(l, str))
+        v = s.get("visual") or {}
+        if isinstance(v, dict):
+            n += sum(word_count(x) for x in (v.get("items") or []) if isinstance(x, str))
+            n += sum(word_count(str(v.get(k, ""))) for k in ("left", "right", "caption", "text"))
+    return n
 
 
 def timeline(script):
@@ -132,7 +146,8 @@ def lint_script(script):
         corpus += [str(h), " ".join(str(l) for l in lines), json.dumps(v)]
     _, total = timeline(script) if isinstance(scenes, list) else ([], 0)
     if total > MAX_TOTAL_S:
-        f.append("derived length %.1fs exceeds %.0fs — cut words or scenes" % (total, MAX_TOTAL_S))
+        f.append("derived length %.1fs exceeds %.0fs: %d on-screen words in %d scenes — cut to under %d words total (fewer scenes or shorter lines)"
+                 % (total, MAX_TOTAL_S, total_words(script), len(scenes), MAX_TOTAL_WORDS))
     low = " ".join(corpus).lower()
     hits = sorted({b for b in BLOCKED if b in low})
     if hits:
@@ -151,6 +166,9 @@ TONE: {tone}
 {extra}
 YOU HAVE NO TOOLS. Do not run commands or create files. Reply with ONLY a JSON object.
 
+WORD BUDGET: at most {budget} words TOTAL across every heading, line, step, card, caption and pill —
+a Short is under 60 seconds and every word is read on screen. Aim for 6 scenes and ~90 words.
+
 Structure: 5–8 scenes. Scene 1 is a "hook" (one punchy line ≤ 9 words that creates a
 question or a surprise; a subtitle line ≤ 10 words). Then 3–5 teaching scenes mixing kinds
 ("point", "steps", "compare", "number", "quote"). End with a "recap" (2–4 bullets) or a "cta"
@@ -161,6 +179,7 @@ Add 1–3 "emphasis" words per scene (exact words that appear in that scene's li
 
 Return exactly this shape:
 {{"schema": "{schema}", "title": "...", "topic": "...", "audience": "...",
+ "chip": "a 1-3 word series label shown top-left, e.g. Money basics",
  "hashtags": ["#..", "#..", "#.."],
  "scenes": [
    {{"kind": "hook", "heading": "...", "lines": ["subtitle"], "emphasis": ["word"]}},
@@ -183,7 +202,7 @@ def build_prompt(brief, feedback=None):
     return PROMPT.format(topic=brief["topic"], audience=brief.get("audience") or "curious general viewers",
                          tone=brief.get("tone") or "clear, warm, a little playful",
                          extra=("NOTES: " + brief["notes"] + "\n") if brief.get("notes") else "",
-                         schema=SCHEMA_SCRIPT, feedback=fb)
+                         schema=SCHEMA_SCRIPT, feedback=fb, budget=MAX_TOTAL_WORDS)
 
 
 def copilot_argv(prompt, model, workdir):
