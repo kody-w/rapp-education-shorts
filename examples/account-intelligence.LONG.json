@@ -1,0 +1,134 @@
+{
+  "schema": "rapp-education-long/1.0",
+  "title": "Account Intelligence, explained",
+  "tagline": "An AIBAST agent that reads your CRM and briefs you before the call",
+  "chip": "AIBAST agents",
+  "sections": [
+    {
+      "kind": "cold_open",
+      "heading": "Twelve minutes before the call",
+      "narration": "It's twelve minutes before a customer call. You open the CRM. There are forty open activities, three overlapping opportunities, and a contact list that hasn't been touched since spring. Somewhere in there is the one thing you actually need to know. Most sellers don't find it in time. They walk in prepared to talk, but not prepared to listen. This is about closing that gap.",
+      "visual": {
+        "type": "title",
+        "lines": [
+          "The data was always there. The briefing wasn't."
+        ]
+      }
+    },
+    {
+      "kind": "explain",
+      "heading": "What it is",
+      "narration": "Account Intelligence is a RAPP agent from Microsoft's AIBAST Agents Library. It's a single Python file you drop into a local RAPP brainstem. Once it's there, you can ask it about an account in plain language. It reads a connected Dynamics tenant and returns three things: an account briefing, a stakeholder map, and a deal risk report. In this library it's filed under B2B sales.",
+      "visual": {
+        "type": "bullets",
+        "items": [
+          "One file: agent.py",
+          "Runs in a local RAPP brainstem",
+          "Category: b2b_sales",
+          "Briefings, stakeholder maps, deal risk"
+        ]
+      }
+    },
+    {
+      "kind": "explain",
+      "heading": "The problem it solves",
+      "narration": "The problem isn't missing data. It's that the data is scattered and shaped for storage, not for reading. Contacts sit in one place, opportunity history in another, activity notes in a third. Assembling all of that by hand takes real time, so most people skip it. The agent does the assembly, every time, in the same shape, so preparation stops depending on how much time you happened to have.",
+      "visual": {
+        "type": "bullets",
+        "items": [
+          "Data is scattered, not scarce",
+          "Manual prep gets skipped under pressure",
+          "Same shape every time",
+          "Reading, not hunting"
+        ]
+      }
+    },
+    {
+      "kind": "steps",
+      "heading": "How it works",
+      "narration": "The flow is straightforward. You ask about an account. The agent queries the connected tenant for the records that matter: accounts, contacts, opportunities, recent activity. It organises what it finds by relationship and by risk, rather than by table. Then it writes the briefing in prose you can actually read on the way to a meeting. And because it's a RAPP agent, the whole exchange happens in conversation.",
+      "visual": {
+        "type": "steps",
+        "items": [
+          "Ask about an account",
+          "Query the connected tenant",
+          "Organise by relationship and risk",
+          "Return a readable briefing"
+        ]
+      }
+    },
+    {
+      "kind": "example",
+      "heading": "A worked example",
+      "narration": "Here's what that looks like against the simulated tenant. You ask about Contoso. The agent comes back with the shape of the relationship — who's engaged, who's gone quiet, and where the current opportunity actually stands. Notice what it doesn't do. It doesn't hand you a wall of records and let you sort it out. It tells you the two or three things that would change how you run the meeting.",
+      "visual": {
+        "type": "dialogue",
+        "turns": [
+          {
+            "who": "user",
+            "text": "Brief me on Contoso before my call."
+          },
+          {
+            "who": "agent",
+            "text": "Contoso: one open opportunity in late stage. Your main sponsor has been active. The technical evaluator hasn't engaged in weeks — that's the gap."
+          },
+          {
+            "who": "user",
+            "text": "Who else is involved?"
+          },
+          {
+            "who": "agent",
+            "text": "Four contacts on record. I've mapped them by role and recent activity, and flagged the two with no coverage."
+          }
+        ]
+      }
+    },
+    {
+      "kind": "fit",
+      "heading": "Where it fits",
+      "narration": "Three places, mainly. Sellers use it as call preparation — the fifteen minutes before, done properly. Sales leaders use it across a territory, because a consistent briefing shape makes accounts comparable. And IT decision makers tend to look at it as a pattern: a small, readable agent, running locally, against a system of record they already own and already govern.",
+      "visual": {
+        "type": "cards",
+        "items": [
+          {
+            "title": "Sellers",
+            "text": "Call prep that actually happens, before every meeting"
+          },
+          {
+            "title": "Sales leaders",
+            "text": "A consistent briefing shape across the territory"
+          },
+          {
+            "title": "IT",
+            "text": "One readable file, local runtime, your system of record"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "install",
+      "heading": "How to get it",
+      "narration": "It's published in the RAPP Agent Registry. You pull down the single file from the AIBAST Agents Library and move it into your brainstem's agents folder. That's the install. No build step, no service to stand up. Restart the brainstem and the agent is available in conversation. Because it's one file, you can open it and read exactly what it does before you ever run it.",
+      "visual": {
+        "type": "terminal",
+        "lines": [
+          "$ curl -sO https://raw.githubusercontent.com/kody-w/RAR/main/agents/@aibast-agents-library/account_intelligence.py",
+          "$ mv account_intelligence.py ~/.brainstem/agents/",
+          "# restart the brainstem — the agent is live"
+        ]
+      }
+    },
+    {
+      "kind": "outro",
+      "heading": "Read it before you run it",
+      "narration": "That's Account Intelligence. A single file, a live tenant, and a briefing you can read in the elevator. Everything shown here ran against a simulated Dynamics tenant with demo data, so treat the specifics as illustration rather than a promise. If it's useful, go read the file. It's short, and it'll tell you more about how it works than any video can. More agents in this series soon.",
+      "visual": {
+        "type": "title",
+        "lines": [
+          "Account Intelligence",
+          "AIBAST agents, explained"
+        ]
+      }
+    }
+  ]
+}

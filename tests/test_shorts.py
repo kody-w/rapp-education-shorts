@@ -122,6 +122,17 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("PREVIOUS ATTEMPT WAS REFUSED", calls[1])
         self.assertIn("NO TOOLS", calls[0])
 
+    def test_batch_is_resumable_and_never_stops(self):
+        with tempfile.TemporaryDirectory() as d:
+            ex = str(ROOT / "examples" / "why-is-the-sky-blue.SCRIPT.json")
+            bad = Path(d, "bad.json"); bad.write_text("{not json")
+            briefs = [{"slug": "one", "topic": "t", "script": ex}, {"slug": "two", "topic": "t", "script": str(bad)}]
+            summary, results = P.batch(Path(d, "root"), briefs, skip_render=True, log=lambda m: None)
+            self.assertEqual(results[0]["outcome"] in ("composed", "check_failed"), True)
+            self.assertEqual(results[1]["outcome"], "error")
+            self.assertTrue(Path(d, "root", "batch-ledger.jsonl").exists())
+            self.assertEqual(sum(summary[k] for k in summary if k != "total"), 2)
+
     def test_cli_help(self):
         r = subprocess.run([sys.executable, str(ROOT / "shorts.py"), "--help"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0); self.assertIn("compose", r.stdout)
@@ -129,3 +140,53 @@ class PipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LongFormTests(unittest.TestCase):
+    def setUp(self):
+        from eshorts import long as L, compose_long as CL
+        self.L, self.CL = L, CL
+        self.doc = json.loads((ROOT / "examples" / "account-intelligence.LONG.json").read_text())
+
+    def test_control_example_passes_lint(self):
+        self.assertEqual(self.L.lint_long(self.doc), [])
+
+    def test_break_structure(self):
+        d = json.loads(json.dumps(self.doc)); d["sections"][0]["kind"] = "explain"
+        self.assertTrue(any("cold_open" in f for f in self.L.lint_long(d)))
+        d = json.loads(json.dumps(self.doc)); d["sections"][1]["narration"] = "too short"
+        self.assertTrue(any("narration has" in f for f in self.L.lint_long(d)))
+        d = json.loads(json.dumps(self.doc)); d["sections"][1]["narration"] += " see http://x.com"
+        self.assertTrue(any("blocked" in f for f in self.L.lint_long(d)))
+        # the terminal card MAY carry a URL
+        self.assertEqual(self.L.lint_long(self.doc), [])
+
+    def test_timings_wrap_measured_audio_and_stay_contiguous(self):
+        spans = [(0.0, 20.0), (20.45, 22.0), (42.9, 18.0), (61.35, 20.0), (81.8, 15.0), (97.25, 19.0), (116.7, 21.0), (138.15, 17.0)]
+        times, total = self.CL.timings(self.doc, spans)
+        self.assertEqual(len(times), len(self.doc["sections"]))
+        for a, b in zip(times, times[1:]):
+            self.assertAlmostEqual(a["start"] + a["dur"], b["start"], places=3)
+        self.assertGreater(total, spans[-1][0] + spans[-1][1])
+        # without audio, durations are derived and still contiguous
+        times2, total2 = self.CL.timings(self.doc, None)
+        for a, b in zip(times2, times2[1:]):
+            self.assertAlmostEqual(a["start"] + a["dur"], b["start"], places=3)
+
+    def test_compose_long_invariants(self):
+        out = self.CL.compose_long(self.doc, "ai", spans=None)
+        h = out["index.html"]
+        self.assertIn('data-composition-id="long" data-start="0" data-width="1920" data-height="1080"', h)
+        self.assertIn('window.__timelines["long"] = tl;', h)
+        self.assertNotIn("repeat: -1", h); self.assertNotIn("Math.random", h); self.assertNotIn("transition:", h)
+        ids = re.findall(r'\bid="([^"]+)"', h); self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn('id="capband" class="clip"', h)
+        self.assertNotIn("<audio", h)
+        out2 = self.CL.compose_long(self.doc, "ai", spans=[(i * 20.0, 18.0) for i in range(len(self.doc["sections"]))],
+                                    audio_rel="assets/narration.wav")
+        self.assertIn('<audio id="vo" src="assets/narration.wav"', out2["index.html"])
+        self.assertGreater(out2["captions"], 20)
+
+    def test_caption_chunks_never_orphan(self):
+        chunks = self.L.caption_chunks("One two three four five six seven eight nine ten eleven twelve thirteen. Short one.")
+        self.assertTrue(all(1 <= len(c.split()) <= 11 for c in chunks))

@@ -163,3 +163,220 @@ def once(short, topic=None, model="claude-opus-5", from_script=None, theme=None,
     if not r["ok"]:
         return {"outcome": "render_failed", "log_tail": r["log_tail"], **comp}
     return {"outcome": "rendered", "mp4": r["mp4"], "mp4_sha256": r["mp4_sha256"], "probe": r.get("probe"), **comp}
+
+
+# ── batch ─────────────────────────────────────────────────────────────────────
+
+def batch(root, briefs, model="claude-opus-5", quality="high", skip_render=False, resume=True,
+          log=None, limit=None, formats=("short",), tts_engine="vibevoice"):
+    """Run many shorts one by one. `briefs` is a list of dicts:
+    {slug, topic, audience?, tone?, notes?, theme?, script? (path)}.
+
+    Resumable: a slug whose MP4 already exists is skipped (resume=True). Every
+    item's outcome lands in <root>/batch-ledger.jsonl and the summary is returned.
+    Failures never stop the batch — they are named and the next item runs.
+    """
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    ledger = root / "batch-ledger.jsonl"
+    log = log or (lambda m: print(m, flush=True))
+    results = []
+    todo = briefs[:limit] if limit else briefs
+    for i, b in enumerate(todo, 1):
+        sh = Short(root, b["slug"])
+        wrote_brief = False
+        for fmt in formats:
+            mp4 = sh.out / (sh.slug + (".mp4" if fmt == "short" else "-long.mp4"))
+            if resume and mp4.exists():
+                log("[%d/%d] %s/%s — already rendered, skipping" % (i, len(todo), sh.slug, fmt))
+                results.append({"slug": sh.slug, "format": fmt, "outcome": "skipped", "mp4": str(mp4)})
+                continue
+            log("[%d/%d] %s/%s — %s" % (i, len(todo), sh.slug, fmt, b.get("topic", "")[:80]))
+            try:
+                topic = None if wrote_brief else b.get("topic")
+                if fmt == "short":
+                    out = once(sh, topic=topic, model=model, from_script=b.get("script"),
+                               theme=b.get("theme"), quality=quality, skip_render=skip_render,
+                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"))
+                else:
+                    out = long(sh, topic=topic, model=model, from_script=b.get("long_script"), tts_engine=tts_engine,
+                               quality=quality, skip_render=skip_render,
+                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"))
+                wrote_brief = True
+            except Exception as e:  # keep the batch alive; the ledger names it
+                out = {"outcome": "error", "error": "%s: %s" % (type(e).__name__, e)}
+            rec = {"utc": utc_now(), "slug": sh.slug, "format": fmt, "outcome": out.get("outcome"),
+                   "mp4": out.get("mp4"), "duration": out.get("duration"), "findings": out.get("findings"),
+                   "error": out.get("error")}
+            with open(ledger, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            log("    → %s%s" % (rec["outcome"], (" (%ss)" % rec["duration"]) if rec.get("duration") else ""))
+            results.append(rec)
+    summary = {"total": len(todo)}
+    for r in results:
+        summary[r["outcome"]] = summary.get(r["outcome"], 0) + 1
+    write_json(root / "batch-summary.json", {"utc": utc_now(), "summary": summary, "results": results})
+    return summary, results
+
+
+# ── long-form (16:9, narrated) ────────────────────────────────────────────────
+
+def long_script(short, model="claude-opus-5", timeout=900, attempts=3, runner=None, from_file=None):
+    from .long import lint_long, write_long_script
+    path = short.dir / "LONG.json"
+    if from_file:
+        doc = read_json(from_file)
+        if not isinstance(doc, dict):
+            raise ValueError("--long-script file is not JSON")
+        findings = lint_long(doc)
+        if findings:
+            short.record("long.script.refused", {"source": str(from_file), "findings": findings})
+            return None, findings
+        write_json(path, doc)
+        short.record("long.script", {"source": str(from_file), "sha256": sha256_file(path), "sections": len(doc["sections"])})
+        return doc, []
+    b = read_json(short.dir / "brief.json") or {"topic": short.slug}
+    doc, findings, log = write_long_script(b, model=model, timeout=timeout, attempts=attempts, runner=runner,
+                                           drafts_dir=short.dir / "drafts")
+    if doc is None:
+        short.record("long.script.failed", {"model": model, "attempts": len(log), "findings": findings})
+        return None, findings
+    write_json(path, doc)
+    short.record("long.script", {"model": model, "attempts": len(log), "sha256": sha256_file(path),
+                                 "sections": len(doc["sections"]), "narration_words": sum(
+                                     len((s.get("narration") or "").split()) for s in doc["sections"])})
+    return doc, []
+
+
+def narrate(short, engine="vibevoice", timeout=900):
+    """Per-section TTS → one narration.wav in project/assets + measured spans.
+    Returns (spans|None, detail). engine='none' skips (durations derived)."""
+    from . import tts
+    doc = read_json(short.dir / "LONG.json")
+    if not doc:
+        raise ValueError("no LONG.json — run `long-script` first")
+    if engine == "none":
+        short.record("narrate", {"engine": "none"})
+        return None, "no narration (durations derived from words)"
+    if not tts.vibevoice_available():
+        short.record("narrate.failed", {"engine": engine, "error": "VibeVoice not available"})
+        return None, "VibeVoice not available; composing without voice"
+    work = short.dir / "drafts" / "tts"
+    work.mkdir(parents=True, exist_ok=True)
+    parts = []
+    for i, s in enumerate(doc["sections"], 1):
+        wav = work / ("section-%02d.wav" % i)
+        cache_key = work / ("section-%02d.txt" % i)
+        text = (s.get("narration") or "").strip()
+        if wav.exists() and cache_key.exists() and cache_key.read_text(encoding="utf-8").strip() == text:
+            parts.append(wav); continue                      # resume: same text, same wav
+        ok, detail = tts.synthesize(text, wav, work / ("w%02d" % i), timeout=timeout)
+        if not ok:
+            short.record("narrate.failed", {"engine": engine, "section": i, "error": detail})
+            return None, "section %d: %s" % (i, detail)
+        cache_key.write_text(text + "\n", encoding="utf-8")
+        parts.append(wav)
+    (short.project / "assets").mkdir(parents=True, exist_ok=True)
+    out = short.project / "assets" / "narration.wav"
+    spans = tts.concat_wavs(parts, out)
+    if not spans:
+        short.record("narrate.failed", {"engine": engine, "error": "concat failed (ffmpeg?)"})
+        return None, "concat failed"
+    write_json(short.dir / "state" / "narration-spans.json", {"engine": engine, "voice": tts.vibevoice_config()["voice"],
+                                                              "spans": spans, "wav_sha256": sha256_file(out)})
+    short.record("narrate", {"engine": engine, "voice": tts.vibevoice_config()["voice"], "sections": len(parts),
+                             "seconds": round(spans[-1][0] + spans[-1][1], 2), "wav_sha256": sha256_file(out)})
+    return spans, str(out)
+
+
+def compose_long_project(short, fps=30):
+    from .compose_long import compose_long
+    from .long import lint_long
+    doc = read_json(short.dir / "LONG.json")
+    if not doc:
+        raise ValueError("no LONG.json for %s" % short.slug)
+    findings = lint_long(doc)
+    if findings:
+        raise ValueError("LONG.json does not pass lint: " + "; ".join(findings[:5]))
+    spans_doc = read_json(short.dir / "state" / "narration-spans.json") or {}
+    spans = [tuple(x) for x in spans_doc.get("spans", [])] or None
+    audio_rel = "assets/narration.wav" if spans and (short.project / "assets" / "narration.wav").exists() else None
+    files = compose_long(doc, short.slug, spans=spans, audio_rel=audio_rel, fps=fps)
+    proj = short.dir / "project-long"
+    proj.mkdir(exist_ok=True)
+    (proj / "assets").mkdir(exist_ok=True)
+    if audio_rel:
+        import shutil as _sh
+        _sh.copy2(short.project / "assets" / "narration.wav", proj / "assets" / "narration.wav")
+    write_text(proj / "index.html", files["index.html"])
+    write_text(proj / "package.json", package_json(short.slug + "-long", cli_version()))
+    write_text(proj / "hyperframes.json", json.dumps({
+        "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
+        "registry": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry",
+        "paths": {"blocks": "compositions", "components": "compositions/components", "assets": "assets"},
+        "media": {"autoProxy": True}}, indent=2) + "\n")
+    write_text(proj / "meta.json", json.dumps({"id": short.slug + "-long", "name": doc.get("title", short.slug),
+                                               "duration": files["duration"], "fps": fps,
+                                               "narrated": bool(audio_rel)}, indent=2) + "\n")
+    sha = sha256_file(proj / "index.html")
+    short.record("long.compose", {"index_sha256": sha, "duration": files["duration"], "captions": files["captions"],
+                                  "narrated": bool(audio_rel)})
+    return {"index": str(proj / "index.html"), "duration": files["duration"], "narrated": bool(audio_rel), "index_sha256": sha}
+
+
+def check_long(short, timeout=1200):
+    proj = short.dir / "project-long"
+    rc, out = _run(hf_argv("check"), proj, timeout)
+    report = short.dir / "state" / "check-long.txt"
+    write_text(report, out)
+    ok = rc == 0
+    short.record("long.check", {"ok": ok, "exit": rc, "report_sha256": sha256_file(report)})
+    return ok, out[-1200:], str(report)
+
+
+def render_long(short, quality="high", timeout=3600):
+    proj = short.dir / "project-long"
+    out_mp4 = short.out / (short.slug + "-long.mp4")
+    rc, out = _run(hf_argv("render", "--quality", quality, "--output", str(out_mp4)), proj, timeout)
+    write_text(short.dir / "state" / "render-long.txt", out)
+    ok = rc == 0 and out_mp4.exists() and out_mp4.stat().st_size > 0
+    rec = {"ok": ok, "exit": rc, "quality": quality}
+    if ok:
+        rec["mp4_sha256"] = sha256_file(out_mp4); rec["mp4_bytes"] = out_mp4.stat().st_size
+        if shutil.which("ffprobe"):
+            rc2, o2 = _run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,duration",
+                            "-of", "json", str(out_mp4)], short.out, 60)
+            try:
+                st = json.loads(o2)["streams"]
+                rec["probe"] = {"streams": [x.get("codec_type") for x in st],
+                                "video": next(({k: x.get(k) for k in ("width", "height", "duration")} for x in st if x.get("codec_type") == "video"), None)}
+            except Exception:
+                pass
+        if shutil.which("ffmpeg"):
+            poster = short.out / "poster-long.png"
+            _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "2.0", "-i", str(out_mp4), "-frames:v", "1", str(poster)], short.out, 120)
+    short.record("long.render" if ok else "long.render.failed", rec)
+    rec.update({"mp4": str(out_mp4) if ok else None, "log_tail": out[-800:]})
+    return rec
+
+
+def long(short, topic=None, model="claude-opus-5", from_script=None, tts_engine="vibevoice", quality="high",
+         skip_render=False, runner=None, **brief_kw):
+    """The long-form chain: (brief) → LONG.json → narration → compose → check → render."""
+    if topic:
+        brief(short, topic, **brief_kw)
+    doc, findings = long_script(short, model=model, runner=runner, from_file=from_script)
+    if doc is None:
+        return {"outcome": "long_script_failed", "findings": findings}
+    spans, detail = narrate(short, engine=tts_engine)
+    comp = compose_long_project(short)
+    ok, summary, report = check_long(short)
+    if not ok:
+        return {"outcome": "long_check_failed", "report": report, "summary": summary, **comp}
+    if skip_render:
+        return {"outcome": "long_composed", "check": "ok", "narration": detail, **comp}
+    r = render_long(short, quality=quality)
+    if not r["ok"]:
+        return {"outcome": "long_render_failed", "log_tail": r["log_tail"], **comp}
+    return {"outcome": "long_rendered", "mp4": r["mp4"], "mp4_sha256": r["mp4_sha256"], "probe": r.get("probe"),
+            "narration": detail, **comp}

@@ -1,8 +1,13 @@
 # rapp-education-shorts
 
-An **animated-short maker for educational YouTube Shorts** — text-forward, motion-first,
-watched with the sound off. Give it a topic; get a 9:16 [HyperFrames](https://hyperframes.heygen.com)
-composition you can open in Studio, and an MP4.
+An **animated video maker for educational YouTube** — two formats from one topic:
+
+- **Short** (9:16, ≤ 59 s): text-forward, motion-first, watched with the sound off.
+- **Long-form** (16:9, 3–4 min): a faceless, *narrated* explainer — local
+  [VibeVoice](https://github.com/microsoft/VibeVoice) voice, VO-synced caption band,
+  animated cards — in the dark mono / amber / green language of the RAPP films.
+
+Both are [HyperFrames](https://hyperframes.heygen.com) compositions you can open in Studio, and MP4s.
 
 ```
 brief ──▶ SCRIPT.json (model writes it, lint gates it) ──▶ HyperFrames project ──▶ check ──▶ render
@@ -32,6 +37,23 @@ python3 shorts.py preview sky   # HyperFrames Studio: scrub the timeline, edit a
 ```
 
 Stages one at a time: `new` → `script` → `compose` → `check` → `render` (`status`, `verify`, `list`).
+
+```bash
+python3 shorts.py long sky --topic "..."       # 16:9 narrated explainer → shorts/sky/out/sky-long.mp4
+python3 shorts.py both sky --topic "..."       # the Short and the long-form
+python3 shorts.py batch briefs.json --formats short,long   # many topics, one by one, resumable
+```
+
+**Long-form pipeline:** `LONG.json` (sections: cold_open · explain · steps · example · stat · fit ·
+install · outro; narration 40–95 words each) → per-section VibeVoice narration → one WAV,
+**every section timed from what the audio actually is** (ffprobe) → `project-long/index.html`
+(caption band = discrete text states synced to the voice) → `hyperframes check` → render.
+No VibeVoice? `--tts none` derives durations from words and renders silent.
+VibeVoice setup: a venv where `pip install -e <VibeVoice checkout>` ran; point `VIBEVOICE_PYTHON`
+and `VIBEVOICE_REPO` at it (auto-detected at `~/.rapp-mirror/venv`, `~/VibeVoice`); voice via
+`VIBEVOICE_VOICE` (default `en-davis_man`); torch ≥ 2.6 preset loading is handled by the driver.
+
+![long-form frames](examples/account-intelligence.long-frames.png)
 
 ## The script contract (`rapp-education-short/1.0`)
 
@@ -86,7 +108,10 @@ Add a music bed with `compose --audio bed.mp3` (framework-owned playback, `data-
 shorts.py            CLI
 eshorts/script.py    schema, lint, model prompt (Copilot CLI, NO tools; or --script)
 eshorts/compose.py   SCRIPT → index.html + package.json + hyperframes.json + meta.json
-eshorts/pipeline.py  stages + `hyperframes check` / `render` + ffprobe/poster
+eshorts/pipeline.py  stages (short + long + batch) + `hyperframes check` / `render` + ffprobe/poster
+eshorts/long.py      long-form contract, lint, prompt, caption chunking
+eshorts/compose_long.py  LONG.json (+ measured narration) → 1920×1080 project with caption band + audio track
+eshorts/tts.py       VibeVoice runner (torch-2.6 preset patch), ffprobe durations, WAV concat with measured spans
 eshorts/store.py     per-short directory + hash-chained ledger
 eshorts/themes.py    palettes
 tests/               stdlib tests (break/control pairs)
