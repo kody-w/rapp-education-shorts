@@ -23,9 +23,12 @@ from . import SCHEMA_SCRIPT  # noqa: F401  (kept for parity)
 from .script import BLOCKED, extract_json, run_copilot, word_count
 
 SCHEMA_LONG = "rapp-education-long/1.0"
-KINDS = ("cold_open", "explain", "steps", "example", "stat", "fit", "install", "outro")
+KINDS = ("cold_open", "explain", "steps", "example", "stat", "fit", "install", "outro",
+         # solution-mode spine (the industry-video template): what the viewer gets, never how it is built
+         "title", "problem", "overview", "turn", "outcomes", "close")
+SOLUTION_KINDS = ("title", "problem", "overview", "turn", "outcomes", "close")
 MIN_SECTIONS, MAX_SECTIONS = 6, 10
-MIN_NARR_WORDS, MAX_NARR_WORDS = 30, 95
+MIN_NARR_WORDS, MAX_NARR_WORDS = 20, 95
 MIN_TOTAL_WORDS, MAX_TOTAL_WORDS = 300, 700
 SPEECH_WPS = 2.6
 HOLD_S = 1.4
@@ -44,10 +47,22 @@ def lint_long(doc):
         return f + ["sections must be a list"]
     if not (MIN_SECTIONS <= len(secs) <= MAX_SECTIONS):
         f.append("section count %d outside %d-%d" % (len(secs), MIN_SECTIONS, MAX_SECTIONS))
-    if secs and (secs[0].get("kind") != "cold_open"):
+    solution = bool(secs) and any(isinstance(x, dict) and x.get("kind") in SOLUTION_KINDS for x in secs)
+    if secs and not solution and (secs[0].get("kind") != "cold_open"):
         f.append("section 1 must be cold_open")
-    if secs and (secs[-1].get("kind") != "outro"):
+    if secs and not solution and (secs[-1].get("kind") != "outro"):
         f.append("last section must be outro")
+    if solution:
+        kinds = [x.get("kind") for x in secs if isinstance(x, dict)]
+        if kinds[:1] != ["title"]:
+            f.append("solution mode: section 1 must be a silent 'title'")
+        if kinds[-1:] != ["close"]:
+            f.append("solution mode: last section must be 'close'")
+        if kinds.count("turn") < 3:
+            f.append("solution mode: need at least 3 'turn' sections (the walkthrough)")
+        for must in ("problem", "overview", "outcomes"):
+            if must not in kinds:
+                f.append("solution mode: missing a '%s' section" % must)
     total = 0
     corpus = [str(doc.get("title", "")), str(doc.get("tagline", ""))]
     for i, s in enumerate(secs, 1):
@@ -65,7 +80,10 @@ def lint_long(doc):
         n = s.get("narration")
         wc = word_count(n) if isinstance(n, str) else 0
         total += wc
-        if not isinstance(n, str) or not n.strip():
+        if k == "title":
+            if wc:
+                f.append("section %d (title) must be silent — no narration" % i)
+        elif not isinstance(n, str) or not n.strip():
             f.append("section %d narration missing" % i)
         elif not (MIN_NARR_WORDS <= wc <= MAX_NARR_WORDS):
             f.append("section %d narration has %d words (need %d-%d)" % (i, wc, MIN_NARR_WORDS, MAX_NARR_WORDS))
@@ -75,7 +93,9 @@ def lint_long(doc):
             v = {}
         vt = v.get("type")
         need = {"cold_open": "title", "explain": "bullets", "steps": "steps", "example": "dialogue",
-                "stat": "stat", "fit": "cards", "install": "terminal", "outro": "title"}.get(k)
+                "stat": "stat", "fit": "cards", "install": "terminal", "outro": "title",
+                "title": "titlecard", "problem": "pain", "overview": "triptych", "turn": "chat",
+                "outcomes": "tiles", "close": "cta"}.get(k)
         if need and vt != need:
             f.append("section %d (%s) needs visual.type=%s" % (i, k, need))
         if vt in ("bullets", "steps", "terminal"):
@@ -99,6 +119,42 @@ def lint_long(doc):
         if vt == "stat":
             if not re.match(r"^[\d.,]+[%xKMB+]?$", str(v.get("value", ""))) or not v.get("caption"):
                 f.append("section %d stat needs a numeric value and caption" % i)
+        if vt == "titlecard":
+            if not v.get("name") or not v.get("kicker"):
+                f.append("section %d titlecard needs name and kicker" % i)
+        if vt == "pain":
+            items = v.get("items")
+            if not v.get("persona") or not isinstance(items, list) or not (2 <= len(items) <= 3) or any(word_count(x) > 12 for x in items):
+                f.append("section %d pain needs persona and 2-3 items (≤12 words)" % i)
+        if vt == "triptych":
+            for col in ("sources", "flow", "actions"):
+                col_items = v.get(col)
+                if not isinstance(col_items, list) or not (1 <= len(col_items) <= 4) or any(word_count(x) > 8 for x in col_items):
+                    f.append("section %d triptych.%s needs 1-4 items (≤8 words)" % (i, col))
+        if vt == "chat":
+            if not v.get("prompt") or word_count(v.get("prompt", "")) > 22:
+                f.append("section %d chat needs a prompt (≤22 words)" % i)
+            r = v.get("response") or {}
+            if not isinstance(r, dict) or not r.get("lead"):
+                f.append("section %d chat.response needs a lead line" % i)
+            tbl = r.get("table") if isinstance(r, dict) else None
+            if tbl is not None:
+                if not (isinstance(tbl, dict) and isinstance(tbl.get("headers"), list) and 2 <= len(tbl["headers"]) <= 5
+                        and isinstance(tbl.get("rows"), list) and 2 <= len(tbl["rows"]) <= 5
+                        and all(isinstance(rw, list) and len(rw) == len(tbl["headers"]) for rw in tbl["rows"])):
+                    f.append("section %d chat.response.table needs 2-5 headers and 2-5 rows of equal width" % i)
+            bl = r.get("bullets") if isinstance(r, dict) else None
+            if bl is not None and (not isinstance(bl, list) or not (1 <= len(bl) <= 4) or any(word_count(x) > 14 for x in bl)):
+                f.append("section %d chat.response.bullets needs 1-4 items (≤14 words)" % i)
+            if not v.get("benefit") or word_count(v.get("benefit", "")) > 18:
+                f.append("section %d chat needs a benefit line (≤18 words)" % i)
+        if vt == "tiles":
+            items = v.get("items")
+            if not isinstance(items, list) or len(items) != 3 or any(word_count(x) > 5 for x in items):
+                f.append("section %d tiles need exactly 3 items (≤5 words)" % i)
+        if vt == "cta":
+            if not v.get("summary") or not v.get("cta"):
+                f.append("section %d cta needs summary and cta" % i)
         if vt == "cards":
             items = v.get("items")
             if not isinstance(items, list) or not (3 <= len(items) <= 4) or not all(
@@ -201,3 +257,101 @@ def caption_chunks(text, max_words=11):
             out.append(" ".join(take))
             words = words[len(take):]
     return out
+
+
+# ── solution mode: the industry-video template ───────────────────────────────
+
+SOLUTION_PROMPT = """You write narrated, faceless solution videos (2:30–3:20, 16:9) in the style of enterprise product
+explainers: a calm narrator, clean animated cards, and a worked walkthrough of real prompts and answers.
+The video is about THE SOLUTION and what the persona gets. It NEVER discusses how the agent is built,
+packaged, installed, downloaded or where its code lives. Never say: RAPP, agent.py, brainstem, RAR,
+registry, single file, install, GitHub, curl, python, repo, open source.
+
+TOPIC: {topic}
+AUDIENCE: {audience}
+TONE: {tone}
+GROUNDING (use ONLY facts, names, numbers, prompts and answers from here):
+{notes}
+
+YOU HAVE NO TOOLS. Reply with ONLY a JSON object.
+
+Structure — exactly this order (every section object has "kind", "heading", "narration", "visual"):
+ 1. kind "title"    silent title card (no narration): visual {{"type":"titlecard","name":"<advertised name>","kicker":"<industry or 'Cross-industry'> · Copilot agent"}}
+ 2. kind "problem"  15–20 s: the persona and the pain (narration 40–65 words, e.g. "Sellers face … Yet account research often means …");
+               visual {{"type":"pain","persona":"<role>","items":["<pain 1>","<pain 2>","<pain 3>"]}}
+ 3. kind "overview" "Now an agent can …" (narration 45–70 words naming the Microsoft products);
+               visual {{"type":"triptych","sources":["Dynamics 365","SharePoint"],"flow":["Microsoft Teams","Copilot experience"],"actions":["<verb phrase>","<verb phrase>","<verb phrase>"]}}
+ 4–7. three to five kind "turn" sections — the walkthrough. Each turn: heading = what the persona asks for (≤48 chars);
+       narration 35–70 words: "Imagine a <persona> who … The agent …" then one benefit sentence
+       ("Insights that once required hours are available in seconds."). Visual:
+       {{"type":"chat","prompt":"<the real prompt as the persona would type it, ≤22 words — drop qualifiers like 'synthetic'>",
+         "response":{{"lead":"<one-line summary of the real answer>",
+                      "table":{{"headers":["..",".."],"rows":[["..",".."],["..",".."]]}}  (optional, from the AGENT TABLES, 2–5 rows),
+                      "bullets":["..",".."]}} (optional, 1–4, from the real answer),
+         "benefit":"<≤18 words>"}}
+       Use "Going further, …" / "Next, …" / "When the <persona> is ready, …" transitions like a guided workflow;
+       include a Teams or Outlook hand-off beat if the grounding has one.
+ 8. kind "outcomes" "How the agent helps": narration 35–60 words summarising value; visual {{"type":"tiles","items":["<≤5 words>","<≤5 words>","<≤5 words>"]}}
+ 9. kind "close"    narration 25–45 words: one-sentence summary + "Get started on your agentic journey today."
+               visual {{"type":"cta","summary":"<one line>","cta":"Explore the AIBAST Agents Library"}}
+Narration is spoken English: short sentences, product names spoken naturally, no bullet-speak, no URLs.
+Total narration {tlo}–{thi} words. Headings ≤ 48 chars.
+
+Return exactly: {{"schema":"{schema}","title":"<advertised name>","tagline":"<one line>","chip":"AIBAST agents",
+ "sections":[{{"kind":"title","heading":"...","narration":"","visual":{{...}}}}, {{"kind":"problem", ...}}, …]}}{feedback}"""
+
+
+def build_solution_prompt(brief, feedback=None):
+    fb = ""
+    if feedback:
+        fb = ("\n\nYOUR PREVIOUS ATTEMPT WAS REFUSED — fix every one of these:\n- " + "\n- ".join(feedback[:12])
+              + "\nReply with ONLY the JSON object.")
+    return SOLUTION_PROMPT.format(topic=brief["topic"], audience=brief.get("audience") or "business decision makers",
+                                  tone=brief.get("tone") or "calm, confident, concrete", notes=brief.get("notes") or "",
+                                  tlo=330, thi=520, schema=SCHEMA_LONG, feedback=fb)
+
+
+def lint_solution(doc):
+    """lint_long plus the solution-mode vocabulary gate."""
+    f = lint_long(doc)
+    try:
+        from .aibast import forbidden_hits
+    except Exception:  # pragma: no cover
+        return f
+    spoken = " ".join([str(doc.get("title", "")), str(doc.get("tagline", ""))] +
+                      [str(s.get("heading", "")) + " " + str(s.get("narration", "")) + " " + json.dumps(s.get("visual") or {})
+                       for s in (doc.get("sections") or []) if isinstance(s, dict)])
+    hits = [h for h in forbidden_hits(spoken) if h not in ("registry",) or "Registry" in spoken]
+    if hits:
+        f.append("the video must not mention how the agent is built/installed — remove: %s" % ", ".join(hits))
+    return f
+
+
+def write_solution_script(brief, model="claude-opus-5", timeout=900, attempts=3, runner=None, drafts_dir=None):
+    from pathlib import Path
+    runner = runner or run_copilot
+    drafts_dir = Path(drafts_dir or ".")
+    feedback, log = None, []
+    for n in range(1, attempts + 1):
+        text, err = runner(build_solution_prompt(brief, feedback), model, timeout, drafts_dir)
+        try:
+            (drafts_dir / ("long-attempt-%d.txt" % n)).write_text(text or ("ERROR: %s\n" % err), encoding="utf-8")
+        except Exception:
+            pass
+        if err:
+            log.append({"n": n, "error": err}); feedback = ["the model call failed: %s" % err]; continue
+        doc = extract_json(text)
+        if not isinstance(doc, dict):
+            log.append({"n": n, "error": "no JSON object in output"}); feedback = ["return only the JSON object"]; continue
+        doc.setdefault("schema", SCHEMA_LONG)
+        doc["mode"] = "solution"
+        for sec in doc.get("sections") or []:            # tolerate "id"/"type" as the kind alias
+            if isinstance(sec, dict) and not sec.get("kind"):
+                sec["kind"] = sec.get("id") or sec.get("type")
+        findings = lint_solution(doc)
+        log.append({"n": n, "findings": findings})
+        if not findings:
+            return doc, [], log
+        feedback = findings
+    last = log[-1] if log else {}
+    return None, last.get("findings") or [last.get("error", "unknown")], log

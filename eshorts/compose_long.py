@@ -92,19 +92,63 @@ def section_html(i, s, n):
         lines = v.get("lines") or []
         body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="term" id="%s-term"><div class="tbar"><i></i><i></i><i></i><span>terminal</span></div>'
                 '<pre class="tbody">%s</pre></div></div>' % (sid, head, sid, "".join('<div class="tl" id="%s-i%d">%s</div>' % (sid, j, _e(x)) for j, x in enumerate(lines, 1))))
+    elif k == "title":
+        body = ('<div class="titlecard" id="%s-card"><div class="kicker" id="%s-k">%s</div><h1 class="tname" id="%s-h">%s</h1></div>'
+                % (sid, sid, _e(v.get("kicker", "")), sid, _e(v.get("name") or s.get("heading", ""))))
+    elif k == "problem":
+        body = ('<div class="panel"><div class="persona" id="%s-p">%s</div><h2 class="h" id="%s-h">%s</h2><ul class="pain">%s</ul></div>'
+                % (sid, _e(v.get("persona", "")), sid, head,
+                   "".join('<li class="painitem" id="%s-i%d"><span class="x">×</span><span>%s</span></li>' % (sid, j, _e(x))
+                           for j, x in enumerate(v.get("items") or [], 1))))
+    elif k == "overview":
+        def col(j, title, items):
+            return ('<div class="ocol" id="%s-i%d"><div class="otitle">%s</div><div class="ocard">%s</div></div>'
+                    % (sid, j, title, "".join('<div class="oi">%s</div>' % _e(x) for x in (items or []))))
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="triptych">%s<div class="arrow" id="%s-a1">›</div>%s<div class="arrow" id="%s-a2">›</div>%s</div></div>'
+                % (sid, head, col(1, "Sources", v.get("sources")), sid, col(2, "Flow of work", v.get("flow")), sid, col(3, "Actions", v.get("actions"))))
+    elif k == "turn":
+        r = v.get("response") or {}
+        tbl = r.get("table") or {}
+        table_html = ""
+        if tbl.get("headers"):
+            table_html = ('<table class="ctab"><thead><tr>%s</tr></thead><tbody>%s</tbody></table>' % (
+                "".join("<th>%s</th>" % _e(x) for x in tbl["headers"]),
+                "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _e(c) for c in row) for row in tbl.get("rows") or [])))
+        bullets_html = ""
+        if r.get("bullets"):
+            bullets_html = "<ul class=\"cbul\">%s</ul>" % "".join("<li>%s</li>" % _e(x) for x in r["bullets"])
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="chatwin" id="%s-win">'
+                '<div class="rail"><div class="rlogo"></div><div class="ritem">New chat</div><div class="ritem">Search</div><div class="ritem">Library</div></div>'
+                '<div class="convo"><div class="ubub" id="%s-i1">%s</div>'
+                '<div class="acard" id="%s-i2"><div class="aname"><span class="adot"></span>%s</div><div class="alead">%s</div>%s%s</div>'
+                '<div class="benefit" id="%s-i3">%s</div></div></div></div>'
+                % (sid, head, sid, sid, _e(v.get("prompt", "")), sid, _e(s.get("agent_name") or "Agent"), _e(r.get("lead", "")),
+                   table_html, bullets_html, sid, _e(v.get("benefit", ""))))
+    elif k == "outcomes":
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="tiles">%s</div></div>'
+                % (sid, head, "".join('<div class="tile" id="%s-i%d"><div class="tico">%s</div><div class="ttxt">%s</div></div>'
+                                      % (sid, j, ["◆", "▲", "●", "■"][(j - 1) % 4], _e(x)) for j, x in enumerate(v.get("items") or [], 1))))
+    elif k == "close":
+        body = ('<div class="titlewrap"><p class="tag" id="%s-t1">%s</p><div class="ctabtn" id="%s-i1">%s</div><div class="brand" id="%s-b">%s</div></div>'
+                % (sid, _e(v.get("summary", "")), sid, _e(v.get("cta", "")), sid, _e(s.get("brand") or "AIBAST Agents Library")))
     else:
         body = '<div class="panel"><h2 class="h" id="%s-h">%s</h2></div>' % (sid, head)
     return ('<section id="%s" class="clip scene kind-%s" data-start="{start}" data-duration="{dur}" data-track-index="%d">'
             '<div class="stage-in" id="%s-in">%s</div></section>' % (sid, k, 1 + ((i - 1) % 4), sid, body))
 
 
+STYLES = {
+    "mono": ':root{--bg:#07080d;--panel:#0d0f18;--amber:#f0b429;--amber-dim:#7a5a1a;--green:#3ddc84;--ink:#e8e9f0;--muted:#8f95ad;--accent:#f0b429;--grad:linear-gradient(135deg,#f0b429,#c98a12);--line:rgba(255,255,255,.07);--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--body:var(--mono)}',
+    "solution": ':root{--bg:#0b1230;--panel:#111a3d;--amber:#f77fbe;--amber-dim:#7a3f66;--green:#8f7cff;--ink:#ffffff;--muted:#a9b0d6;--accent:#f77fbe;--grad:linear-gradient(135deg,#f77fbe 0%,#8f5cff 100%);--line:rgba(255,255,255,.08);--mono:"Inter",system-ui,sans-serif;--body:"Inter",system-ui,sans-serif}',
+}
+
 CSS = """
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#07080d;--panel:#0d0f18;--amber:#f0b429;--amber-dim:#7a5a1a;--green:#3ddc84;--ink:#e8e9f0;--muted:#8f95ad;--line:rgba(255,255,255,.07);--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-html,body{width:%(W)dpx;height:%(H)dpx;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--mono)}
+%(vars)s
+html,body{width:%(W)dpx;height:%(H)dpx;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--body)}
 #root{position:relative;width:%(W)dpx;height:%(H)dpx;overflow:hidden}
 .clip{position:absolute;inset:0}
-#fill{position:absolute;inset:0;background:radial-gradient(1200px 700px at 50%% -8%%,rgba(240,180,41,.10),transparent 60%%),radial-gradient(900px 600px at 50%% 120%%,rgba(61,220,132,.06),transparent 60%%),var(--bg)}
+#fill{position:absolute;inset:0;background:radial-gradient(1200px 700px at 50%% -8%%,rgba(247,127,190,.10),transparent 60%%),radial-gradient(900px 600px at 50%% 120%%,rgba(143,92,255,.10),transparent 60%%),var(--bg)}
 #scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.015) 0 1px,transparent 1px 4px);opacity:.5}
 #glow{position:absolute;width:900px;height:900px;left:510px;top:90px;border-radius:50%%;background:radial-gradient(circle,rgba(240,180,41,.10),transparent 60%%);will-change:transform}
 /* chrome */
@@ -147,6 +191,40 @@ html,body{width:%(W)dpx;height:%(H)dpx;overflow:hidden;background:var(--bg);colo
 .tbar i{width:12px;height:12px;border-radius:50%%;background:#3a3f55;display:inline-block}.tbar span{margin-left:8px;letter-spacing:3px}
 .tbody{padding:26px 28px;font-size:30px;line-height:1.5;color:var(--green);white-space:pre-wrap;word-break:break-word;font-family:var(--mono)}
 .tl{will-change:transform}
+/* solution-mode kinds */
+.titlecard{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center}
+.tname{font-size:96px;line-height:1.05;font-weight:800;color:var(--ink);padding:26px 54px;border-radius:22px;background:var(--grad);box-shadow:0 20px 60px rgba(0,0,0,.35);max-width:1500px;text-wrap:balance}
+.persona{font-size:24px;letter-spacing:5px;text-transform:uppercase;color:var(--accent)}
+.pain{list-style:none;display:flex;flex-direction:column;gap:22px}
+.painitem{display:flex;gap:22px;align-items:flex-start;font-size:40px;line-height:1.3;color:var(--ink);will-change:transform;max-width:1500px}
+.painitem .x{color:var(--muted);font-weight:800;font-size:40px}
+.triptych{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:18px;align-items:stretch}
+.ocol{display:flex;flex-direction:column;gap:14px;will-change:transform}
+.otitle{font-size:22px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);text-align:center}
+.ocard{background:var(--grad);border-radius:20px;padding:30px 26px;min-height:300px;display:flex;flex-direction:column;justify-content:center;gap:16px;box-shadow:0 14px 40px rgba(0,0,0,.3)}
+.oi{font-size:32px;line-height:1.3;font-weight:600;color:#fff;text-align:center}
+.arrow{align-self:center;font-size:80px;color:var(--muted);line-height:1;padding-bottom:20px}
+.kind-turn .stage-in{top:112px;bottom:150px;justify-content:flex-start;gap:18px}
+.kind-turn .h{font-size:44px}
+.chatwin{display:grid;grid-template-columns:200px 1fr;background:#f6f7fb;color:#1c1f2a;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);min-height:520px;max-height:640px;font-family:"Inter",system-ui,sans-serif;will-change:transform}
+.rail{background:#eceef6;padding:22px 18px;display:flex;flex-direction:column;gap:14px;font-size:20px;color:#3a3f55}
+.rlogo{width:34px;height:34px;border-radius:9px;background:var(--grad);margin-bottom:8px}
+.convo{padding:24px 30px;display:flex;flex-direction:column;gap:16px}
+.ubub{align-self:flex-end;background:#e6e9f4;border-radius:16px 16px 4px 16px;padding:14px 22px;font-size:26px;line-height:1.3;max-width:1000px;will-change:transform}
+.acard{background:#fff;border:1px solid #e3e6f0;border-radius:16px;padding:18px 24px;display:flex;flex-direction:column;gap:12px;will-change:transform}
+.aname{display:flex;align-items:center;gap:10px;font-size:20px;color:#5560a3;font-weight:700}
+.adot{width:12px;height:12px;border-radius:50%%;background:var(--grad)}
+.alead{font-size:28px;line-height:1.35;font-weight:600;color:#1c1f2a}
+.ctab{border-collapse:collapse;font-size:22px;width:100%%}
+.ctab th{background:var(--grad);color:#fff;text-align:left;padding:10px 14px;font-weight:700}
+.ctab td{padding:7px 14px;border-bottom:1px solid #eceef6;color:#2a2e3d}
+.cbul{margin:0;padding-left:28px;font-size:25px;line-height:1.4;color:#2a2e3d}
+.benefit{align-self:flex-start;color:var(--accent);font-size:26px;font-weight:700;padding:8px 0;font-family:var(--mono)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+.tile{background:var(--grad);border-radius:20px;padding:44px 30px;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center;box-shadow:0 14px 40px rgba(0,0,0,.3);will-change:transform}
+.tico{font-size:60px;color:#fff;opacity:.9}.ttxt{font-size:36px;font-weight:700;color:#fff;line-height:1.25}
+.ctabtn{background:var(--grad);color:#fff;font-weight:800;font-size:40px;padding:26px 54px;border-radius:999px;box-shadow:0 14px 40px rgba(0,0,0,.35);will-change:transform;margin-top:10px}
+.brand{font-size:26px;letter-spacing:6px;text-transform:uppercase;color:var(--muted);margin-top:26px}
 /* caption band */
 #cap{position:absolute;left:0;right:0;bottom:56px;text-align:center;color:var(--muted);font-size:31px;letter-spacing:1px;padding:0 160px;line-height:1.35}
 #cap b{color:var(--ink)}
@@ -185,9 +263,34 @@ S.forEach((sc) => {
       tl.fromTo(id + "-h", { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t + 0.3);
       gsap.utils.toArray(id + " .tag").forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.45 }, t + 0.9 + k * 0.35));
       break;
+    case "title":
+      tl.fromTo(id + "-k", { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t + 0.3);
+      tl.fromTo(id + "-h", { autoAlpha: 0, scale: 0.94, y: 20 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.7, ease: "power3.out" }, t + 0.5);
+      break;
+    case "problem":
+      tl.fromTo(id + "-p", { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t + 0.1);
+      tl.fromTo(id + "-h", { autoAlpha: 0, x: -40 }, { autoAlpha: 1, x: 0, duration: 0.5, ease: "power3.out" }, t + 0.25);
+      break;
+    case "close":
+      gsap.utils.toArray(id + " .tag").forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t + 0.2 + k * 0.3));
+      tl.fromTo(id + "-i1", { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.55, ease: "back.out(1.6)" }, t + 1.0);
+      tl.fromTo(id + "-b", { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.5 }, t + 1.5);
+      break;
     default:
       tl.fromTo(id + "-h", { autoAlpha: 0, x: -40 }, { autoAlpha: 1, x: 0, duration: 0.5, ease: "power3.out" }, t + 0.1);
   }
+  if (sc.kind === "problem") items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, x: -40 }, { autoAlpha: 1, x: 0, duration: 0.45, ease: "power3.out" }, t + 0.8 + k * spread(items.length, span) * 2.4));
+  if (sc.kind === "overview") {
+    items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 40 }, { autoAlpha: 1, y: 0, duration: 0.55, ease: "power3.out" }, t + 0.7 + k * 0.5));
+    ["-a1", "-a2"].forEach((a, k) => tl.fromTo(id + a, { autoAlpha: 0, x: -20 }, { autoAlpha: 1, x: 0, duration: 0.4 }, t + 1.15 + k * 0.5));
+  }
+  if (sc.kind === "turn") {
+    tl.fromTo(id + "-win", { autoAlpha: 0, y: 30, scale: 0.98 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.55, ease: "power3.out" }, t + 0.35);
+    tl.fromTo(id + "-i1", { autoAlpha: 0, x: 40 }, { autoAlpha: 1, x: 0, duration: 0.45, ease: "power3.out" }, t + 0.9);
+    tl.fromTo(id + "-i2", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.55, ease: "power3.out" }, t + Math.min(2.2, 0.9 + span * 0.18));
+    tl.fromTo(id + "-i3", { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.45 }, t + Math.min(span - 1.2, 0.9 + span * 0.55));
+  }
+  if (sc.kind === "outcomes") items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 50, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.3)" }, t + 0.7 + k * 0.45));
   // per-kind items
   if (sc.kind === "explain") items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, x: -50 }, { autoAlpha: 1, x: 0, duration: 0.45, ease: "power3.out" }, t + 0.7 + k * spread(items.length, span) * 2.2));
   if (sc.kind === "steps") {
@@ -245,7 +348,8 @@ def build_captions(doc, times, gap=0.12):
     return caps
 
 
-def compose_long(doc, slug, spans=None, audio_rel=None, fps=30, chip=None):
+def compose_long(doc, slug, spans=None, audio_rel=None, fps=30, chip=None, style=None):
+    style = style or ("solution" if doc.get("mode") == "solution" else "mono")
     times, total = timings(doc, spans)
     plan, parts = [], []
     n = len(doc["sections"])
@@ -254,7 +358,7 @@ def compose_long(doc, slug, spans=None, audio_rel=None, fps=30, chip=None):
         plan.append({"id": "s%d" % i, "kind": s.get("kind"), "start": tm["start"], "dur": tm["dur"],
                      "vo_start": tm["vo_start"], "vo_dur": tm["vo_dur"], "exit": i < n})
     caps = build_captions(doc, times)
-    css = CSS % {"W": W, "H": H}
+    css = CSS % {"W": W, "H": H, "vars": STYLES.get(style, STYLES["mono"])}
     js = JS % {"sections_json": json.dumps(plan), "caps_json": json.dumps(caps), "total": total, "comp": COMP_ID}
     audio = ""
     if audio_rel and spans:

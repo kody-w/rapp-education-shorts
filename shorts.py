@@ -12,6 +12,9 @@
   python3 shorts.py long <slug> --topic "..." [--long-script LONG.json] [--tts vibevoice|none] [--quality ..] [--skip-render]
       16:9 narrated faceless explainer (3–4 min): LONG.json → VibeVoice narration → project-long/ → out/<slug>-long.mp4
   python3 shorts.py both <slug> --topic "..."   the Short and the long-form, one after the other
+  python3 shorts.py briefs --source aibast [--limit N] > briefs.json
+      grounded briefs from the official AIBAST Agents Library (52 advertised solutions; curated copy + captured
+      demo transcripts); solution mode — the video is about the solution, never how it is built
   python3 shorts.py batch briefs.json [--formats short,long] [--quality draft|high] [--limit N] [--no-resume]
       briefs.json = [{"slug","topic","audience?","tone?","notes?","theme?","script?"}] — one by one,
       resumable (rendered slugs skip), failures logged to <root>/batch-ledger.jsonl and the batch continues
@@ -52,6 +55,7 @@ def main(argv=None):
     o.add_argument("--script", dest="from_file"); o.add_argument("--theme"); o.add_argument("--model", default="claude-opus-5")
     o.add_argument("--quality", default="high", choices=["draft", "high"]); o.add_argument("--skip-render", action="store_true")
     add("status"); add("verify"); add("list", slug=False)
+    br = sub.add_parser("briefs"); br.add_argument("--source", default="aibast", choices=["aibast"]); br.add_argument("--limit", type=int)
     for name in ("long", "both"):
         l = add(name); l.add_argument("--topic"); l.add_argument("--audience"); l.add_argument("--tone"); l.add_argument("--notes")
         l.add_argument("--long-script", dest="long_file"); l.add_argument("--script", dest="from_file"); l.add_argument("--theme")
@@ -65,6 +69,12 @@ def main(argv=None):
     if not a.cmd:
         ap.print_help(); return 1
     root = Path(a.root)
+    if a.cmd == "briefs":
+        from eshorts import aibast
+        out = aibast.briefs(limit=a.limit)
+        for b in out:
+            b["mode"] = "solution"
+        print(json.dumps(out, indent=1, ensure_ascii=False)); return 0
     if a.cmd == "batch":
         briefs = json.loads(Path(a.briefs).read_text(encoding="utf-8"))
         summary, _ = P.batch(root, briefs, model=a.model, quality=a.quality, skip_render=a.skip_render,

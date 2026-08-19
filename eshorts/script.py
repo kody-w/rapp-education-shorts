@@ -207,7 +207,7 @@ def build_prompt(brief, feedback=None):
 
 def copilot_argv(prompt, model, workdir):
     return ["copilot", "-p", prompt, "--model", model, "--available-tools=",
-            "--excluded-tools=shell,write,edit,create,fetch,web_fetch",
+            "--excluded-tools=create,edit,web_fetch",
             "--log-level", "none", "--log-dir", str(Path(workdir) / "copilot-logs")]
 
 

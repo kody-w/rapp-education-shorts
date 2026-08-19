@@ -35,9 +35,9 @@ def hf_argv(*args):
     return [exe] + list(args) if exe else ["npx", "--yes", "hyperframes"] + list(args)
 
 
-def brief(short, topic, audience=None, tone=None, notes=None, length=None, theme=None):
+def brief(short, topic, audience=None, tone=None, notes=None, length=None, theme=None, mode=None):
     doc = {"topic": topic, "audience": audience or "", "tone": tone or "", "notes": notes or "",
-           "length": length or "30-55s", "theme": theme or ""}
+           "length": length or "30-55s", "theme": theme or "", "mode": mode or ""}
     md = ("# %s\n\n- **topic:** %s\n- **audience:** %s\n- **tone:** %s\n- **length:** %s\n- **theme:** %s\n\n%s\n"
           % (short.slug, doc["topic"], doc["audience"] or "general", doc["tone"] or "clear, warm, playful",
              doc["length"], doc["theme"] or "auto", ("## notes\n\n" + doc["notes"]) if doc["notes"] else ""))
@@ -197,11 +197,11 @@ def batch(root, briefs, model="claude-opus-5", quality="high", skip_render=False
                 if fmt == "short":
                     out = once(sh, topic=topic, model=model, from_script=b.get("script"),
                                theme=b.get("theme"), quality=quality, skip_render=skip_render,
-                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"))
+                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"), mode=b.get("mode"))
                 else:
                     out = long(sh, topic=topic, model=model, from_script=b.get("long_script"), tts_engine=tts_engine,
                                quality=quality, skip_render=skip_render,
-                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"))
+                               audience=b.get("audience"), tone=b.get("tone"), notes=b.get("notes"), mode=b.get("mode"))
                 wrote_brief = True
             except Exception as e:  # keep the batch alive; the ledger names it
                 out = {"outcome": "error", "error": "%s: %s" % (type(e).__name__, e)}
@@ -236,8 +236,13 @@ def long_script(short, model="claude-opus-5", timeout=900, attempts=3, runner=No
         short.record("long.script", {"source": str(from_file), "sha256": sha256_file(path), "sections": len(doc["sections"])})
         return doc, []
     b = read_json(short.dir / "brief.json") or {"topic": short.slug}
-    doc, findings, log = write_long_script(b, model=model, timeout=timeout, attempts=attempts, runner=runner,
-                                           drafts_dir=short.dir / "drafts")
+    if b.get("mode") == "solution":
+        from .long import write_solution_script
+        doc, findings, log = write_solution_script(b, model=model, timeout=timeout, attempts=attempts, runner=runner,
+                                                   drafts_dir=short.dir / "drafts")
+    else:
+        doc, findings, log = write_long_script(b, model=model, timeout=timeout, attempts=attempts, runner=runner,
+                                               drafts_dir=short.dir / "drafts")
     if doc is None:
         short.record("long.script.failed", {"model": model, "attempts": len(log), "findings": findings})
         return None, findings
@@ -270,6 +275,9 @@ def narrate(short, engine="vibevoice", timeout=900):
         text = (s.get("narration") or "").strip()
         if wav.exists() and cache_key.exists() and cache_key.read_text(encoding="utf-8").strip() == text:
             parts.append(wav); continue                      # resume: same text, same wav
+        if not text:                                          # a silent beat (title card): 3.5 s of silence
+            _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", "3.5", str(wav)], work, 60)
+            cache_key.write_text("\n", encoding="utf-8"); parts.append(wav); continue
         ok, detail = tts.synthesize(text, wav, work / ("w%02d" % i), timeout=timeout)
         if not ok:
             short.record("narrate.failed", {"engine": engine, "section": i, "error": detail})
