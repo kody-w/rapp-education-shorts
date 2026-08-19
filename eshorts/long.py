@@ -23,13 +23,15 @@ from . import SCHEMA_SCRIPT  # noqa: F401  (kept for parity)
 from .script import BLOCKED, extract_json, run_copilot, word_count
 
 SCHEMA_LONG = "rapp-education-long/1.0"
-KINDS = ("cold_open", "explain", "steps", "example", "stat", "fit", "install", "outro",
+KINDS = ("cold_open", "explain", "steps", "example", "stat", "fit", "install", "outro", "workbook", "slide", "diff", "media",
          # solution-mode spine (the industry-video template): what the viewer gets, never how it is built
          "title", "problem", "overview", "turn", "outcomes", "close")
-SOLUTION_KINDS = ("title", "problem", "overview", "turn", "outcomes", "close")
-MIN_SECTIONS, MAX_SECTIONS = 6, 10
+SOLUTION_KINDS = ("title", "problem", "overview", "turn", "outcomes", "close",
+                  # artifact and closed-loop kinds (what the hand-made films show, rendered from the agent's own numbers)
+                  "workbook", "slide", "diff", "media")
+MIN_SECTIONS, MAX_SECTIONS = 6, 16
 MIN_NARR_WORDS, MAX_NARR_WORDS = 20, 95
-MIN_TOTAL_WORDS, MAX_TOTAL_WORDS = 300, 700
+MIN_TOTAL_WORDS, MAX_TOTAL_WORDS = 300, 800
 SPEECH_WPS = 2.6
 HOLD_S = 1.4
 
@@ -95,7 +97,8 @@ def lint_long(doc):
         need = {"cold_open": "title", "explain": "bullets", "steps": "steps", "example": "dialogue",
                 "stat": "stat", "fit": "cards", "install": "terminal", "outro": "title",
                 "title": "titlecard", "problem": "pain", "overview": "triptych", "turn": "chat",
-                "outcomes": "tiles", "close": "cta"}.get(k)
+                "outcomes": "tiles", "close": "cta", "workbook": "workbook", "slide": "slide", "diff": "diff",
+                "media": "media"}.get(k)
         if need and vt != need:
             f.append("section %d (%s) needs visual.type=%s" % (i, k, need))
         if vt in ("bullets", "steps", "terminal"):
@@ -148,6 +151,39 @@ def lint_long(doc):
                 f.append("section %d chat.response.bullets needs 1-4 items (≤14 words)" % i)
             if not v.get("benefit") or word_count(v.get("benefit", "")) > 18:
                 f.append("section %d chat needs a benefit line (≤18 words)" % i)
+            lk = v.get("links")
+            if lk is not None and (not isinstance(lk, list) or len(lk) > 5 or not all(isinstance(x, str) for x in lk)):
+                f.append("section %d chat.links must be up to 5 strings" % i)
+        if vt == "workbook":
+            secs_ = v.get("sections")
+            if not v.get("title") or not isinstance(secs_, list) or not (1 <= len(secs_) <= 5):
+                f.append("section %d workbook needs title and 1-5 sections" % i)
+            else:
+                for sec_ in secs_:
+                    if not (isinstance(sec_, dict) and sec_.get("name") and isinstance(sec_.get("rows"), list) and 1 <= len(sec_["rows"]) <= 6
+                            and all(isinstance(rw, list) and 2 <= len(rw) <= 5 for rw in sec_["rows"])):
+                        f.append("section %d workbook sections need name and 1-6 rows of 2-5 cells" % i); break
+            pr = v.get("progress")
+            if pr is not None and not (isinstance(pr, dict) and isinstance(pr.get("step"), int) and isinstance(pr.get("total"), int)):
+                f.append("section %d workbook.progress needs {step,total} ints" % i)
+        if vt == "slide":
+            kp = v.get("kpis") or []
+            ch = v.get("chart") or {}
+            if not v.get("title") or not (1 <= len(kp) <= 4) or not all(isinstance(x, dict) and x.get("label") and x.get("value") is not None for x in kp):
+                f.append("section %d slide needs title and 1-4 kpis {label,value}" % i)
+            if ch:
+                items_ = ch.get("items")
+                if ch.get("type") not in ("bars", "waterfall") or not isinstance(items_, list) or not (2 <= len(items_) <= 9) \
+                        or not all(isinstance(x, dict) and x.get("label") and isinstance(x.get("value"), (int, float)) for x in items_):
+                    f.append("section %d slide.chart needs type bars|waterfall and 2-9 numeric items" % i)
+        if vt == "diff":
+            items_ = v.get("items")
+            if not isinstance(items_, list) or not (1 <= len(items_) <= 4) or not all(
+                    isinstance(x, dict) and x.get("label") and x.get("before") is not None and x.get("after") is not None for x in items_):
+                f.append("section %d diff needs 1-4 items {label,before,after}" % i)
+        if vt == "media":
+            if not v.get("src") or v.get("kind") not in ("image", "video"):
+                f.append("section %d media needs src and kind image|video" % i)
         if vt == "tiles":
             items = v.get("items")
             if not isinstance(items, list) or len(items) != 3 or any(word_count(x) > 5 for x in items):
@@ -281,7 +317,7 @@ Structure — exactly this order (every section object has "kind", "heading", "n
                visual {{"type":"pain","persona":"<role>","items":["<pain 1>","<pain 2>","<pain 3>"]}}
  3. kind "overview" "Now an agent can …" (narration 45–70 words naming the Microsoft products);
                visual {{"type":"triptych","sources":["Dynamics 365","SharePoint"],"flow":["Microsoft Teams","Copilot experience"],"actions":["<verb phrase>","<verb phrase>","<verb phrase>"]}}
- 4–7. three to five kind "turn" sections — the walkthrough. Each turn: heading = what the persona asks for (≤48 chars);
+ 4–9. three to six kind "turn" sections (artifact sections may sit between them) — the walkthrough. Each turn: heading = what the persona asks for (≤48 chars);
        narration 35–70 words: "Imagine a <persona> who … The agent …" then one benefit sentence
        ("Insights that once required hours are available in seconds."). Visual:
        {{"type":"chat","prompt":"<the real prompt as the persona would type it, ≤22 words — drop qualifiers like 'synthetic'>",
@@ -291,13 +327,24 @@ Structure — exactly this order (every section object has "kind", "heading", "n
          "benefit":"<≤18 words>"}}
        Use "Going further, …" / "Next, …" / "When the <persona> is ready, …" transitions like a guided workflow;
        include a Teams or Outlook hand-off beat if the grounding has one.
+ Between turns you MAY add artifact sections that SHOW what the turn produced, built only from numbers in the grounding:
+   kind "workbook" — a color-coded live review sheet: visual {{"type":"workbook","title":"...","progress":{{"step":2,"total":6}},
+        "sections":[{{"name":"2 · Reconcile comparisons","color":"blue","headers":["Item","Value","Owner","Action"],"rows":[["..","..","..",".."]]}}]}}
+        (colors: blue, amber, red, purple, green, gray — one section per step the conversation has reached)
+   kind "slide"    — an executive slide: visual {{"type":"slide","kicker":"BUDGET COMPARISON","title":"<the slide headline>",
+        "kpis":[{{"label":"Current Estimate","value":"$1,000.0","tag":"provisional"}}],
+        "chart":{{"type":"bars"|"waterfall","items":[{{"label":"Price","value":10.0}}],"unit":"USD millions"}},"footer":"<review gate / caveat>"}}
+   kind "diff"     — the closed loop after a correction: visual {{"type":"diff","items":[{{"label":"Budget residual","before":0.5,"after":0.0,"unit":"USD millions"}}]}}
+   Each artifact section has its own heading and 25–55 words of narration. Use 2–4 artifact sections in total.
+   Chat turns may also carry: "agent_call":"<specialist name if the answer names one>", "review_line":"<the answer's human-review sentence>",
+   "links":["Open Excel review pack","Open editable PowerPoint"] (only if the answer offered them).
  8. kind "outcomes" "How the agent helps": narration 35–60 words summarising value; visual {{"type":"tiles","items":["<≤5 words>","<≤5 words>","<≤5 words>"]}}
  9. kind "close"    narration 25–45 words: one-sentence summary + "Get started on your agentic journey today."
                visual {{"type":"cta","summary":"<one line>","cta":"Explore the AIBAST Agents Library"}}
 Narration is spoken English: short sentences, product names spoken naturally, no bullet-speak, no URLs.
 Total narration {tlo}–{thi} words. Headings ≤ 48 chars.
 
-Return exactly: {{"schema":"{schema}","title":"<advertised name>","tagline":"<one line>","chip":"AIBAST agents",
+Return exactly: {{"schema":"{schema}","title":"<advertised name>","tagline":"<one line>","chip":"<series or customer label>",
  "sections":[{{"kind":"title","heading":"...","narration":"","visual":{{...}}}}, {{"kind":"problem", ...}}, …]}}{feedback}"""
 
 
@@ -308,7 +355,7 @@ def build_solution_prompt(brief, feedback=None):
               + "\nReply with ONLY the JSON object.")
     return SOLUTION_PROMPT.format(topic=brief["topic"], audience=brief.get("audience") or "business decision makers",
                                   tone=brief.get("tone") or "calm, confident, concrete", notes=brief.get("notes") or "",
-                                  tlo=330, thi=520, schema=SCHEMA_LONG, feedback=fb)
+                                  tlo=330, thi=600, schema=SCHEMA_LONG, feedback=fb)
 
 
 def lint_solution(doc):

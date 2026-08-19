@@ -123,5 +123,12 @@ def briefs(limit=None, order="industry_first"):
 
 
 def forbidden_hits(text):
-    low = str(text or "")
-    return sorted({t for t in FORBIDDEN_TERMS if t in low})
+    """Whole-word / whole-token hits only ("repo" must not match "report")."""
+    import re as _re
+    text = str(text or "")
+    hits = set()
+    for t in FORBIDDEN_TERMS:
+        pat = r"(?<![A-Za-z0-9])" + _re.escape(t) + r"(?![A-Za-z0-9])"
+        if _re.search(pat, text):
+            hits.add(t)
+    return sorted(hits)

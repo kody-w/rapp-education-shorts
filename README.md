@@ -102,6 +102,23 @@ model draft is retried once or twice with the exact findings quoted back.
 Themes: `midnight`, `ember`, `forest`, `paper`, `ocean` (`--theme`, or hashed from the slug).
 Add a music bed with `compose --audio bed.mp3` (framework-owned playback, `data-volume`).
 
+## Solution mode (industry-video template) and artifacts
+
+`briefs --source aibast` / `mode: solution` produces the enterprise-explainer spine: silent title → persona + pain →
+Sources · Flow of work · Actions → 3–6 real prompt/answer **turns** (chat mockup with table, *Open …* links,
+human-review line, `Agent Calls:` footer, rail history) → **artifact sections** built from the same numbers →
+outcome tiles → close. Artifact kinds:
+
+| kind | shows | visual |
+|---|---|---|
+| `workbook` | a color-coded live review sheet with a "Workflow progress N of M" chip | `{title, progress:{step,total}, sections:[{name,color,headers,rows}]}` |
+| `slide` | an executive slide: KPI tiles + driver **bars** or a **waterfall** (SVG from the numbers) | `{kicker,title,kpis:[{label,value,tag}],chart:{type:bars\|waterfall,items:[{label,value}],unit},footer}` |
+| `diff` | the closed loop after a correction — before → after counts up | `{items:[{label,before,after,unit}]}` |
+| `media` | **option for the advanced cut**: your real Excel/PowerPoint captures (image or muted video clip) under the narration | `{kind:image\|video, src, caption}` — not used by the model; add by hand |
+
+`brand: {name, primary, secondary}` on the brief/script recolors the stage (secondary carries on-dark accents, primary the light artifacts).
+The vocabulary gate refuses any build/install talk (RAPP, agent.py, install, GitHub …): the video is about the solution.
+
 ## Layout
 
 ```

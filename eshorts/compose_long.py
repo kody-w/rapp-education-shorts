@@ -48,6 +48,76 @@ def timings(doc, spans=None, gap=0.45, lead=0.6, tail=1.2):
     return out, total
 
 
+def _fmt(v, unit=""):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return _e(str(v))
+    txt = ("%+.1f" % f) if abs(f) < 1000 else format(f, "+,.1f")
+    return _e(txt)
+
+
+def bars_svg(sid, items, unit=""):
+    """Horizontal driver bars around zero: positive green, negative red. 1000x{h} viewBox."""
+    n = len(items)
+    rowh = 54
+    h = 30 + n * rowh
+    mx = max(abs(float(x.get("value", 0))) for x in items) or 1.0
+    zero = 520
+    scale = 380 / mx
+    out = ['<svg class="bars" viewBox="0 0 1000 %d" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' % h,
+           '<line x1="%d" y1="10" x2="%d" y2="%d" stroke="rgba(255,255,255,.18)" stroke-width="2"/>' % (zero, zero, h - 10)]
+    for k, x in enumerate(items, 1):
+        v = float(x.get("value", 0)); y = 20 + (k - 1) * rowh
+        w = abs(v) * scale
+        x0 = zero if v >= 0 else zero - w
+        col = "#3ddc84" if v >= 0 else "#f85149"
+        out.append('<text x="20" y="%d" font-size="26" fill="currentColor" font-weight="600">%s</text>' % (y + 30, _e(str(x.get("label", "")))))
+        out.append('<rect id="%s-bar%d" x="%d" y="%d" width="%d" height="30" rx="4" fill="%s"/>' % (sid, k, x0, y + 8, max(2, w), col))
+        tx = (zero + w + 12) if v >= 0 else (zero - w - 12)
+        out.append('<text x="%d" y="%d" font-size="24" fill="%s" font-weight="700" text-anchor="%s">%s</text>' % (
+            tx, y + 30, col, "start" if v >= 0 else "end", _fmt(v)))
+    out.append('</svg>')
+    return "".join(out)
+
+
+def waterfall_svg(sid, items, unit=""):
+    """Cumulative waterfall left→right; the last item is drawn as a total bar. 1000x420."""
+    n = len(items)
+    vals = [float(x.get("value", 0)) for x in items]
+    starts, cum = [], 0.0
+    for k, v in enumerate(vals):
+        if k == n - 1:
+            starts.append(0.0)
+        else:
+            starts.append(cum); cum += v
+    tops = [max(st, st + v) if k < n - 1 else max(0.0, v) for k, (st, v) in enumerate(zip(starts, vals))]
+    bots = [min(st, st + v) if k < n - 1 else min(0.0, v) for k, (st, v) in enumerate(zip(starts, vals))]
+    lo, hi = min(bots + [0.0]), max(tops + [0.0])
+    span = (hi - lo) or 1.0
+    W, H, top, bottom = 1000, 420, 30, 80
+    ph = H - top - bottom
+    def Y(v): return top + (hi - v) / span * ph
+    bw = (W - 60) / n * 0.62
+    step = (W - 60) / n
+    out = ['<svg class="wf" viewBox="0 0 %d %d" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' % (W, H),
+           '<line x1="30" y1="%.1f" x2="%d" y2="%.1f" stroke="rgba(255,255,255,.18)" stroke-width="2"/>' % (Y(0), W - 30, Y(0))]
+    for k, (st, v) in enumerate(zip(starts, vals)):
+        x = 30 + k * step + (step - bw) / 2
+        y0, y1 = Y(max(st, st + v)) if k < n - 1 else Y(max(0.0, v)), Y(min(st, st + v)) if k < n - 1 else Y(min(0.0, v))
+        col = "#8f5cff" if k == n - 1 else ("#3ddc84" if v >= 0 else "#f85149")
+        out.append('<rect id="%s-wf%d" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="4" fill="%s"/>' % (sid, k + 1, x, y0, bw, max(2, y1 - y0), col))
+        out.append('<text x="%.1f" y="%.1f" font-size="22" fill="%s" font-weight="700" text-anchor="middle">%s</text>' % (
+            x + bw / 2, y0 - 8, col, _fmt(v)))
+        out.append('<text x="%.1f" y="%d" font-size="21" fill="currentColor" text-anchor="middle">%s</text>' % (
+            x + bw / 2, H - 40, _e(str(items[k].get("label", ""))[:16])))
+        if k < n - 2:
+            out.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="rgba(255,255,255,.35)" stroke-dasharray="4 4"/>' % (
+                x + bw, Y(st + v), x + step, Y(st + v)))
+    out.append('</svg>')
+    return "".join(out)
+
+
 def _lines(sid, items, cls, tag="div"):
     return "".join('<%s class="%s" id="%s-i%d">%s</%s>' % (tag, cls, sid, k, _e(x), tag) for k, x in enumerate(items, 1))
 
@@ -117,13 +187,65 @@ def section_html(i, s, n):
         bullets_html = ""
         if r.get("bullets"):
             bullets_html = "<ul class=\"cbul\">%s</ul>" % "".join("<li>%s</li>" % _e(x) for x in r["bullets"])
+        links_html = ""
+        if v.get("links"):
+            links_html = '<div class="alinks">%s</div>' % "".join('<span class="alink">%s</span>' % _e(x) for x in v["links"])
+        review_html = ('<div class="areview">%s</div>' % _e(v["review_line"])) if v.get("review_line") else ""
+        call_html = ('<div class="acall">Agent Calls: %s</div>' % _e(v["agent_call"])) if v.get("agent_call") else ""
+        agent_label = _e(v.get("agent_name") or s.get("agent_name") or "Agent")
+        hist = "".join('<div class="ritem hist">%s</div>' % _e(x) for x in (v.get("history") or ["Reset workflow", "Get the package ready", "New chat"])[:4])
         body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="chatwin" id="%s-win">'
-                '<div class="rail"><div class="rlogo"></div><div class="ritem">New chat</div><div class="ritem">Search</div><div class="ritem">Library</div></div>'
+                '<div class="rail"><div class="rlogo"></div><div class="ritem">New chat</div><div class="ritem">Search</div><div class="ritem">Library</div><div class="rsub">Chats</div>%s</div>'
                 '<div class="convo"><div class="ubub" id="%s-i1">%s</div>'
-                '<div class="acard" id="%s-i2"><div class="aname"><span class="adot"></span>%s</div><div class="alead">%s</div>%s%s</div>'
+                '<div class="acard" id="%s-i2"><div class="aname"><span class="adot"></span>%s</div><div class="alead">%s</div>%s%s%s%s%s</div>'
                 '<div class="benefit" id="%s-i3">%s</div></div></div></div>'
-                % (sid, head, sid, sid, _e(v.get("prompt", "")), sid, _e(s.get("agent_name") or "Agent"), _e(r.get("lead", "")),
-                   table_html, bullets_html, sid, _e(v.get("benefit", ""))))
+                % (sid, head, sid, hist, sid, _e(v.get("prompt", "")), sid, agent_label, _e(r.get("lead", "")),
+                   table_html, bullets_html, links_html, review_html, call_html, sid, _e(v.get("benefit", ""))))
+    elif k == "workbook":
+        pr = v.get("progress") or {}
+        secs = v.get("sections") or []
+        html_secs = []
+        for j, sec in enumerate(secs, 1):
+            hdr = sec.get("headers") or []
+            html_secs.append('<tbody class="wsec c-%s" id="%s-i%d"><tr class="whead"><td colspan="%d">%s</td></tr>%s%s</tbody>' % (
+                _e(sec.get("color") or "gray"), sid, j, max(2, len(hdr) or max(len(r) for r in sec["rows"])), _e(sec.get("name", "")),
+                ("<tr class=\"wcols\">%s</tr>" % "".join("<th>%s</th>" % _e(x) for x in hdr)) if hdr else "",
+                "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _e(c) for c in row) for row in sec.get("rows") or [])))
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="sheet" id="%s-win"><div class="sbar"><span class="sname">%s</span>'
+                '<span class="sprog">%s</span></div><table class="wtab">%s</table><div class="stabs"><span class="on">Live Review</span><span>Executive Summary</span><span>Exception Queue</span><span>Slide Bindings</span><span>Evidence Index</span></div></div></div>'
+                % (sid, head, sid, _e(v.get("title", "")), _e("Workflow progress: %s of %s" % (pr.get("step"), pr.get("total"))) if pr else "",
+                   "".join(html_secs)))
+    elif k == "slide":
+        kp = v.get("kpis") or []
+        ch = v.get("chart") or {}
+        chart = ""
+        if ch.get("items"):
+            chart = (waterfall_svg if ch.get("type") == "waterfall" else bars_svg)(sid, ch["items"], ch.get("unit", ""))
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="slide" id="%s-win"><div class="skick">%s<span class="sbrand">%s</span></div>'
+                '<div class="stitle">%s</div><div class="sbody"><div class="kpis">%s</div><div class="schart" id="%s-chart">%s%s</div></div>'
+                '<div class="sfoot">%s</div></div></div>'
+                % (sid, head, sid, _e(v.get("kicker", "")), _e(s.get("brand") or ""), _e(v.get("title", "")),
+                   "".join('<div class="kpi" id="%s-i%d"><div class="kl">%s</div><div class="kv">%s</div>%s</div>' % (
+                       sid, j, _e(x.get("label", "")), _e(str(x.get("value", ""))),
+                       ('<div class="kt">%s</div>' % _e(x["tag"])) if x.get("tag") else "") for j, x in enumerate(kp, 1)),
+                   sid, ('<div class="ctitle">%s</div>' % _e(ch.get("title") or ("Values in %s" % ch.get("unit") if ch.get("unit") else ""))) if ch else "", chart,
+                   _e(v.get("footer", ""))))
+    elif k == "diff":
+        items = v.get("items") or []
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="diffs">%s</div></div>'
+                % (sid, head, "".join(
+                    '<div class="dcard" id="%s-i%d" data-before="%s" data-after="%s"><div class="dl">%s</div>'
+                    '<div class="dv"><span class="db">%s</span><span class="darr">→</span><span class="da" id="%s-da%d">%s</span></div><div class="du">%s</div></div>'
+                    % (sid, j, _e(str(x.get("before"))), _e(str(x.get("after"))), _e(x.get("label", "")), _e(str(x.get("before"))), sid, j,
+                       _e(str(x.get("before"))), _e(x.get("unit", ""))) for j, x in enumerate(items, 1))))
+    elif k == "media":
+        src = v.get("src", "")
+        if v.get("kind") == "video":
+            inner = '<video id="%s-media" src="%s" muted data-start="{start}" data-duration="{dur}" data-track-index="7"></video>' % (sid, _e(src))
+        else:
+            inner = '<img id="%s-media" src="%s" alt="">' % (sid, _e(src))
+        body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="mediaframe" id="%s-win">%s</div>%s</div>'
+                % (sid, head, sid, inner, ('<p class="cap" id="%s-cap">%s</p>' % (sid, _e(v["caption"]))) if v.get("caption") else ""))
     elif k == "outcomes":
         body = ('<div class="panel"><h2 class="h" id="%s-h">%s</h2><div class="tiles">%s</div></div>'
                 % (sid, head, "".join('<div class="tile" id="%s-i%d"><div class="tico">%s</div><div class="ttxt">%s</div></div>'
@@ -206,13 +328,13 @@ html,body{width:%(W)dpx;height:%(H)dpx;overflow:hidden;background:var(--bg);colo
 .arrow{align-self:center;font-size:80px;color:var(--muted);line-height:1;padding-bottom:20px}
 .kind-turn .stage-in{top:112px;bottom:150px;justify-content:flex-start;gap:18px}
 .kind-turn .h{font-size:44px}
-.chatwin{display:grid;grid-template-columns:200px 1fr;background:#f6f7fb;color:#1c1f2a;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);min-height:520px;max-height:640px;font-family:"Inter",system-ui,sans-serif;will-change:transform}
+.chatwin{display:grid;grid-template-columns:200px 1fr;background:#f6f7fb;color:#1c1f2a;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);min-height:520px;max-height:730px;font-family:"Inter",system-ui,sans-serif;will-change:transform}
 .rail{background:#eceef6;padding:22px 18px;display:flex;flex-direction:column;gap:14px;font-size:20px;color:#3a3f55}
 .rlogo{width:34px;height:34px;border-radius:9px;background:var(--grad);margin-bottom:8px}
-.convo{padding:24px 30px;display:flex;flex-direction:column;gap:16px}
+.convo{padding:22px 30px;display:flex;flex-direction:column;gap:14px}
 .ubub{align-self:flex-end;background:#e6e9f4;border-radius:16px 16px 4px 16px;padding:14px 22px;font-size:26px;line-height:1.3;max-width:1000px;will-change:transform}
-.acard{background:#fff;border:1px solid #e3e6f0;border-radius:16px;padding:18px 24px;display:flex;flex-direction:column;gap:12px;will-change:transform}
-.aname{display:flex;align-items:center;gap:10px;font-size:20px;color:#5560a3;font-weight:700}
+.acard{background:#fff;border:1px solid #e3e6f0;border-radius:16px;padding:16px 24px;display:flex;flex-direction:column;gap:10px;will-change:transform}
+.aname{display:flex;align-items:center;gap:10px;font-size:20px;color:#3f4a99;font-weight:700}
 .adot{width:12px;height:12px;border-radius:50%%;background:var(--grad)}
 .alead{font-size:28px;line-height:1.35;font-weight:600;color:#1c1f2a}
 .ctab{border-collapse:collapse;font-size:22px;width:100%%}
@@ -225,6 +347,47 @@ html,body{width:%(W)dpx;height:%(H)dpx;overflow:hidden;background:var(--bg);colo
 .tico{font-size:60px;color:#fff;opacity:.9}.ttxt{font-size:36px;font-weight:700;color:#fff;line-height:1.25}
 .ctabtn{background:var(--grad);color:#fff;font-weight:800;font-size:40px;padding:26px 54px;border-radius:999px;box-shadow:0 14px 40px rgba(0,0,0,.35);will-change:transform;margin-top:10px}
 .brand{font-size:26px;letter-spacing:6px;text-transform:uppercase;color:var(--muted);margin-top:26px}
+.rsub{margin-top:14px;font-size:14px;letter-spacing:3px;text-transform:uppercase;color:#4b516a}
+.ritem.hist{font-size:15px;line-height:1.25;color:#3a3f55;max-width:164px;overflow-wrap:anywhere}
+.alinks{display:flex;flex-wrap:wrap;gap:10px}.alink{font-size:22px;color:#3446b8;text-decoration:underline;text-underline-offset:3px}
+.areview{font-size:22px;color:#3a3f55;border-top:1px solid #eceef6;padding-top:10px}.areview::before{content:"Human review required: ";font-weight:700;color:#1c1f2a}
+.acall{font-size:19px;color:#3f4a99;font-family:var(--mono)}.acall::before{content:"⚒ ";}
+/* workbook */
+.sheet{background:#fff;color:#1c1f2a;border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);font-family:"Inter",system-ui,sans-serif;will-change:transform}
+.sbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px;background:#217346;color:#fff;font-size:22px;font-weight:700}
+.sprog{font-weight:600;opacity:.9;font-size:20px}
+.wtab{border-collapse:collapse;width:100%%;font-size:20px}
+.wtab td,.wtab th{padding:8px 14px;border-bottom:1px solid #eef0f6;text-align:left;vertical-align:top}
+.wtab th{font-weight:700;color:#3a3f55;background:#f7f8fc}
+.whead td{font-weight:800;letter-spacing:.5px;text-transform:uppercase;font-size:18px}
+.wsec.c-blue .whead td{background:#dbe7ff;color:#1e3a8a}.wsec.c-blue td{background:#f0f5ff}
+.wsec.c-amber .whead td{background:#ffe8b3;color:#7a4b00}.wsec.c-amber td{background:#fff7e0}
+.wsec.c-red .whead td{background:#ffd6d6;color:#8a1c1c}.wsec.c-red td{background:#fff0f0}
+.wsec.c-purple .whead td{background:#e6dcff;color:#4b2ea8}.wsec.c-purple td{background:#f4efff}
+.wsec.c-green .whead td{background:#d3f5df;color:#0f5c2e}.wsec.c-green td{background:#eefbf2}
+.wsec.c-gray .whead td{background:#e6e8f0;color:#2a2e3d}
+.stabs{display:flex;gap:2px;background:#eceef6;padding:6px 10px 0;font-size:16px}.stabs span{padding:6px 14px;background:#e0e3ee;border-radius:6px 6px 0 0;color:#3a3f55}.stabs span.on{background:#fff;color:#217346;font-weight:700}
+/* slide */
+.slide{background:#fff;color:#1c1f2a;border-radius:14px;padding:30px 36px;box-shadow:0 24px 70px rgba(0,0,0,.45);font-family:"Inter",system-ui,sans-serif;display:flex;flex-direction:column;gap:14px;will-change:transform;min-height:560px}
+.skick{display:flex;justify-content:space-between;font-size:18px;letter-spacing:3px;text-transform:uppercase;color:var(--brand,#5b2d90);font-weight:700}
+.sbrand{color:var(--brand,#5b2d90);letter-spacing:1px;text-transform:none;font-size:22px}
+.stitle{font-size:38px;line-height:1.2;font-weight:800;color:#1c1f2a;max-width:1500px}
+.sbody{display:grid;grid-template-columns:300px 1fr;gap:26px;align-items:start}
+.kpis{display:flex;flex-direction:column;gap:14px}
+.kpi{border-left:6px solid var(--brand,#5b2d90);padding:6px 14px}.kl{font-size:16px;letter-spacing:2px;text-transform:uppercase;color:#5b6070}.kv{font-size:40px;font-weight:800;line-height:1.1}.kt{font-size:14px;letter-spacing:2px;text-transform:uppercase;color:#92400e;font-weight:700}
+.schart{color:#1c1f2a}.ctitle{font-size:18px;color:#5b6070;margin-bottom:6px;font-weight:600}
+.schart svg{width:100%%;height:auto;display:block;color:#1c1f2a}
+.sfoot{border-top:1px solid #eceef6;padding-top:10px;font-size:18px;color:#5b6070}
+/* diff */
+.diffs{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px}
+.dcard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:30px 28px;display:flex;flex-direction:column;gap:12px;will-change:transform}
+.dl{font-size:22px;letter-spacing:3px;text-transform:uppercase;color:var(--muted)}
+.dv{display:flex;align-items:baseline;gap:18px;font-size:70px;font-weight:800;font-variant-numeric:tabular-nums}
+.db{color:var(--muted);text-decoration:line-through;font-size:44px}.darr{color:var(--muted);font-size:44px}.da{color:var(--green)}
+.du{font-size:20px;color:var(--muted)}
+/* media (option 2: real captures) */
+.mediaframe{border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45);background:#000;max-height:760px}
+.mediaframe img,.mediaframe video{display:block;width:100%%;height:auto}
 /* caption band */
 #cap{position:absolute;left:0;right:0;bottom:56px;text-align:center;color:var(--muted);font-size:31px;letter-spacing:1px;padding:0 160px;line-height:1.35}
 #cap b{color:var(--ink)}
@@ -290,6 +453,28 @@ S.forEach((sc) => {
     tl.fromTo(id + "-i2", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.55, ease: "power3.out" }, t + Math.min(2.2, 0.9 + span * 0.18));
     tl.fromTo(id + "-i3", { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.45 }, t + Math.min(span - 1.2, 0.9 + span * 0.55));
   }
+  if (sc.kind === "workbook") {
+    tl.fromTo(id + "-win", { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.55, ease: "power3.out" }, t + 0.35);
+    items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.5 }, t + 0.9 + k * Math.min(1.4, span * 0.18)));
+  }
+  if (sc.kind === "slide") {
+    tl.fromTo(id + "-win", { autoAlpha: 0, y: 30, scale: 0.98 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.55, ease: "power3.out" }, t + 0.35);
+    items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, x: -20 }, { autoAlpha: 1, x: 0, duration: 0.45 }, t + 0.9 + k * 0.25));
+    const bars = gsap.utils.toArray(id + " rect[id*='-bar'], " + id + " rect[id*='-wf']");
+    bars.forEach((el, k) => tl.fromTo(el, { scaleY: 0, transformOrigin: "50%% 100%%" }, { scaleY: 1, duration: 0.5, ease: "power2.out" }, t + 1.3 + k * 0.18));
+  }
+  if (sc.kind === "diff") {
+    items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t + 0.5 + k * 0.3));
+    (sc.diff || []).forEach((d, k) => {
+      const el = document.getElementById(d.id); if (!el) return;
+      const b = parseFloat(d.before), a = parseFloat(d.after);
+      if (isNaN(b) || isNaN(a)) { tl.set(el, { textContent: String(d.after) }, t + 1.4 + k * 0.3); return; }
+      const dec = Math.max((String(d.before).split(".")[1] || "").length, (String(d.after).split(".")[1] || "").length);
+      const proxy = { v: b };
+      tl.fromTo(proxy, { v: b }, { v: a, duration: 1.2, ease: "power2.out", onUpdate: () => { el.textContent = proxy.v.toFixed(dec); } }, t + 1.4 + k * 0.3);
+    });
+  }
+  if (sc.kind === "media") tl.fromTo(id + "-win", { autoAlpha: 0, scale: 0.98 }, { autoAlpha: 1, scale: 1, duration: 0.6, ease: "power3.out" }, t + 0.3);
   if (sc.kind === "outcomes") items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, y: 50, scale: 0.94 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.3)" }, t + 0.7 + k * 0.45));
   // per-kind items
   if (sc.kind === "explain") items.forEach((el, k) => tl.fromTo(el, { autoAlpha: 0, x: -50 }, { autoAlpha: 1, x: 0, duration: 0.45, ease: "power3.out" }, t + 0.7 + k * spread(items.length, span) * 2.2));
@@ -356,9 +541,17 @@ def compose_long(doc, slug, spans=None, audio_rel=None, fps=30, chip=None, style
     for i, (s, tm) in enumerate(zip(doc["sections"], times), 1):
         parts.append(section_html(i, s, n).format(start=tm["start"], dur=tm["dur"]))
         plan.append({"id": "s%d" % i, "kind": s.get("kind"), "start": tm["start"], "dur": tm["dur"],
-                     "vo_start": tm["vo_start"], "vo_dur": tm["vo_dur"], "exit": i < n})
+                     "vo_start": tm["vo_start"], "vo_dur": tm["vo_dur"], "exit": i < n,
+                     "diff": [{"id": "s%d-da%d" % (i, j), "before": x.get("before"), "after": x.get("after")}
+                              for j, x in enumerate((s.get("visual") or {}).get("items") or [], 1)] if s.get("kind") == "diff" else []})
     caps = build_captions(doc, times)
-    css = CSS % {"W": W, "H": H, "vars": STYLES.get(style, STYLES["mono"])}
+    brand = doc.get("brand") or {}
+    vars_css = STYLES.get(style, STYLES["mono"])
+    if brand.get("primary"):
+        prim = brand["primary"]; sec = brand.get("secondary") or prim
+        # on the dark stage the lighter secondary carries accents (contrast); the primary lives on light artifacts
+        vars_css += ":root{--brand:%s;--accent:%s;--amber:%s;--grad:linear-gradient(135deg,%s 0%%,%s 100%%)}" % (prim, sec, sec, prim, sec)
+    css = CSS % {"W": W, "H": H, "vars": vars_css}
     js = JS % {"sections_json": json.dumps(plan), "caps_json": json.dumps(caps), "total": total, "comp": COMP_ID}
     audio = ""
     if audio_rel and spans:

@@ -35,9 +35,12 @@ def hf_argv(*args):
     return [exe] + list(args) if exe else ["npx", "--yes", "hyperframes"] + list(args)
 
 
-def brief(short, topic, audience=None, tone=None, notes=None, length=None, theme=None, mode=None):
+def brief(short, topic, audience=None, tone=None, notes=None, length=None, theme=None, mode=None, **extra):
     doc = {"topic": topic, "audience": audience or "", "tone": tone or "", "notes": notes or "",
            "length": length or "30-55s", "theme": theme or "", "mode": mode or ""}
+    for k in ("brand", "chip", "agent_name"):     # presentation hints
+        if extra.get(k):
+            doc[k] = extra[k]
     md = ("# %s\n\n- **topic:** %s\n- **audience:** %s\n- **tone:** %s\n- **length:** %s\n- **theme:** %s\n\n%s\n"
           % (short.slug, doc["topic"], doc["audience"] or "general", doc["tone"] or "clear, warm, playful",
              doc["length"], doc["theme"] or "auto", ("## notes\n\n" + doc["notes"]) if doc["notes"] else ""))
@@ -246,6 +249,16 @@ def long_script(short, model="claude-opus-5", timeout=900, attempts=3, runner=No
     if doc is None:
         short.record("long.script.failed", {"model": model, "attempts": len(log), "findings": findings})
         return None, findings
+    # brief-level presentation hints ride into the script (never into the model's facts)
+    for key in ("brand", "chip", "agent_name"):
+        if b.get(key):
+            doc[key] = b[key]
+    if b.get("agent_name"):
+        for sec in doc.get("sections") or []:
+            if isinstance(sec, dict) and sec.get("kind") in ("turn", "slide", "close") and not sec.get("agent_name"):
+                sec["agent_name"] = b["agent_name"]
+                if sec.get("kind") == "slide" and (doc.get("brand") or {}).get("name"):
+                    sec["brand"] = doc["brand"]["name"]
     write_json(path, doc)
     short.record("long.script", {"model": model, "attempts": len(log), "sha256": sha256_file(path),
                                  "sections": len(doc["sections"]), "narration_words": sum(

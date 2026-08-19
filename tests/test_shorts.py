@@ -187,6 +187,31 @@ class LongFormTests(unittest.TestCase):
         self.assertIn('<audio id="vo" src="assets/narration.wav"', out2["index.html"])
         self.assertGreater(out2["captions"], 20)
 
+    def test_artifact_kinds_lint_and_render(self):
+        d = json.loads(json.dumps(self.doc))
+        d["mode"] = "solution"; d["brand"] = {"name": "Contoso", "primary": "#5b2d90", "secondary": "#8f5cff"}
+        secs = [
+            {"kind": "title", "heading": "X Copilot", "narration": "", "visual": {"type": "titlecard", "name": "X Copilot", "kicker": "Finance"}},
+            {"kind": "problem", "heading": "Today", "narration": " ".join(["w"] * 40), "visual": {"type": "pain", "persona": "Analyst", "items": ["a", "b"]}},
+            {"kind": "overview", "heading": "Now", "narration": " ".join(["w"] * 40), "visual": {"type": "triptych", "sources": ["A"], "flow": ["B"], "actions": ["C"]}},
+            {"kind": "turn", "heading": "Ask", "narration": " ".join(["w"] * 40), "visual": {"type": "chat", "prompt": "p", "response": {"lead": "l", "table": {"headers": ["a", "b"], "rows": [["1", "2"], ["3", "4"]]}}, "benefit": "b", "agent_call": "VarianceAnalysis", "review_line": "analyst owns interpretation", "links": ["Open Excel review pack"]}},
+            {"kind": "workbook", "heading": "Sheet", "narration": " ".join(["w"] * 30), "visual": {"type": "workbook", "title": "LIVE REVIEW", "progress": {"step": 2, "total": 6}, "sections": [{"name": "2 · Reconcile", "color": "blue", "headers": ["Item", "Value"], "rows": [["CE vs Budget", "+30.0"]]}]}},
+            {"kind": "slide", "heading": "Slide", "narration": " ".join(["w"] * 30), "visual": {"type": "slide", "kicker": "BUDGET", "title": "T", "kpis": [{"label": "CE", "value": "$1,000.0"}], "chart": {"type": "waterfall", "items": [{"label": "Budget", "value": 970}, {"label": "Price", "value": 10}, {"label": "CE", "value": 1000}]}, "footer": "f"}},
+            {"kind": "turn", "heading": "Fix", "narration": " ".join(["w"] * 40), "visual": {"type": "chat", "prompt": "p", "response": {"lead": "l"}, "benefit": "b"}},
+            {"kind": "diff", "heading": "Closed loop", "narration": " ".join(["w"] * 30), "visual": {"type": "diff", "items": [{"label": "Residual", "before": 0.5, "after": 0.0, "unit": "USD millions"}]}},
+            {"kind": "turn", "heading": "Deck", "narration": " ".join(["w"] * 40), "visual": {"type": "chat", "prompt": "p", "response": {"lead": "l"}, "benefit": "b"}},
+            {"kind": "outcomes", "heading": "How", "narration": " ".join(["w"] * 40), "visual": {"type": "tiles", "items": ["a", "b", "c"]}},
+            {"kind": "close", "heading": "Close", "narration": " ".join(["w"] * 30), "visual": {"type": "cta", "summary": "s", "cta": "c"}},
+        ]
+        d["sections"] = secs
+        self.assertEqual(self.L.lint_long(d), [])
+        html = self.CL.compose_long(d, "x")["index.html"]
+        for needle in ("LIVE REVIEW", "Workflow progress: 2 of 6", "wsec c-blue", 'class="wf"', "Agent Calls: VarianceAnalysis",
+                       "Open Excel review pack", "--brand:#5b2d90", 'data-before="0.5"', "areview"):
+            self.assertIn(needle, html)
+        bad = json.loads(json.dumps(d)); bad["sections"][5]["visual"]["chart"]["type"] = "pie"
+        self.assertTrue(any("bars|waterfall" in f for f in self.L.lint_long(bad)))
+
     def test_caption_chunks_never_orphan(self):
         chunks = self.L.caption_chunks("One two three four five six seven eight nine ten eleven twelve thirteen. Short one.")
         self.assertTrue(all(1 <= len(c.split()) <= 11 for c in chunks))
