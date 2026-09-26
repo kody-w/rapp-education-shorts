@@ -1,5 +1,9 @@
 # rapp-education-shorts
 
+<!-- rapp1:network-header:start -->
+[![RAPP/1](https://kody-w.github.io/rapp-hive-public/portfolio/badges/rapp-education-shorts.svg)](https://github.com/kody-w/rapp-hive-public/blob/main/portfolio/repos/rapp-education-shorts.md) · **New to RAPP?** [Start here: get your Brainstem →](https://github.com/kody-w/rapp-installer#start-here)
+<!-- rapp1:network-header:end -->
+
 An **animated video maker for educational YouTube** — two formats from one topic:
 
 - **Short** (9:16, ≤ 59 s): text-forward, motion-first, watched with the sound off.
